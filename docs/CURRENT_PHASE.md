@@ -14,10 +14,10 @@ Parent sub-stage status:
 APPROVED_AND_CLOSED_AFTER_FAIL_CLOSED_CORRECTION
 
 Current sub-stage:
-PS-03D5-6 — Account Write Frontend, Runtime Disabled
+PS-03D5-6A — Account Write Frontend Core Reconstruction
 
 Current status:
-PS-03D5-6 — AWAITING COMMAND CENTER AUTHORIZATION TO START
+PS-03D5-6A — IMPLEMENTATION COMPLETE
 
 Next planned sub-stage:
 PS-03D5-7 — Account Mutation Verification and PS-03D5 Closure

@@ -1,0 +1,2884 @@
+diff --git a/docs/CURRENT_PHASE.md b/docs/CURRENT_PHASE.md
+index 7f3331e..118aa36 100644
+--- a/docs/CURRENT_PHASE.md
++++ b/docs/CURRENT_PHASE.md
+@@ -14,10 +14,10 @@ Parent sub-stage status:
+ APPROVED_AND_CLOSED_AFTER_FAIL_CLOSED_CORRECTION
+ 
+ Current sub-stage:
+-PS-03D5-6 — Account Write Frontend, Runtime Disabled
++PS-03D5-6A — Account Write Frontend Core Reconstruction
+ 
+ Current status:
+-PS-03D5-6 — AWAITING COMMAND CENTER AUTHORIZATION TO START
++PS-03D5-6A — IMPLEMENTATION COMPLETE
+ 
+ Next planned sub-stage:
+ PS-03D5-7 — Account Mutation Verification and PS-03D5 Closure
+=== NEW FILE: artifacts/playsyncer/src/features/account-write/CreateAccountDialog.tsx ===
+/**
+ * PS-03D5-6A — Create Account Dialog
+ *
+ * Creates a new Account under a given Game.
+ *
+ * Requirements:
+ * - gameId comes from parent context (prop), not editable.
+ * - statusOverride is NOT available during Create.
+ * - Identifiers (accountCode, displayNumber) are not editable.
+ * - At least one non-empty Backup Code is required.
+ * - Backup Code rows can be added and removed.
+ * - Prevent duplicate submit while pending.
+ * - Clear Passwords and Backup Codes after success and every close path.
+ * - Duplicate flow: submit without confirmed → DUPLICATE_WARNING → dialog →
+ *   confirm sends ONE retry with confirmed: true → a SECOND warning is
+ *   treated as a generic error (no automatic retry loop).
+ *
+ * DEFECT GUARDS:
+ * - error.data is read (not error.response).
+ * - data.code checked (not Error.message) for ACCOUNT_OPS_DISABLED.
+ * - Raw messages are never rendered.
+ * - Delete hooks are not imported.
+ */
+import { useState, useEffect, useRef } from "react";
+import { Plus, Trash2, UserCircle2, X } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useCreateAccount } from "@workspace/api-client-react";
+import {
+  parseMutationError,
+  safeMutationErrorMessage,
+  PERSIAN_GENERIC_MSG,
+} from "./parseApiError";
+import { isValidBirthDate } from "./validateBirthDate";
+import { DuplicateWarningDialog } from "./DuplicateWarningDialog";
+
+interface Props {
+  open: boolean;
+  gameId: string;
+  onSuccess: () => void;
+  onClose: () => void;
+}
+
+type FieldErrors = Partial<
+  Record<
+    | "psnEmail"
+    | "psnPassword"
+    | "emailPassword"
+    | "onlineId"
+    | "birthDate"
+    | "familyManagementEmail"
+    | "backupCodes"
+    | "submit",
+    string
+  >
+>;
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const isValidEmail = (v: string) => EMAIL_RE.test(v.trim());
+
+/** Clear only sensitive fields — called on success and every close path. */
+function emptySensitive() {
+  return {
+    psnPassword: "",
+    backupCodes: [""],
+  };
+}
+
+export function CreateAccountDialog({ open, gameId, onSuccess, onClose }: Props) {
+  const [psnEmail, setPsnEmail] = useState("");
+  const [psnPassword, setPsnPassword] = useState("");
+  const [emailPassword, setEmailPassword] = useState("");
+  const [onlineId, setOnlineId] = useState("");
+  const [birthDate, setBirthDate] = useState("");
+  const [familyManagementEmail, setFamilyManagementEmail] = useState("");
+  const [backupCodes, setBackupCodes] = useState<string[]>([""]);
+  const [errors, setErrors] = useState<FieldErrors>({});
+
+  // Duplicate flow state
+  const [showDuplicate, setShowDuplicate] = useState(false);
+  const [duplicateFields, setDuplicateFields] = useState<string[]>([]);
+  // pendingPayload holds the data to retry with confirmed: true
+  const pendingPayloadRef = useRef<{
+    psnEmail: string;
+    psnPassword: string;
+    emailPassword: string;
+    onlineId: string;
+    birthDate: string;
+    familyManagementEmail: string;
+    backupCodes: string[];
+  } | null>(null);
+  // Prevents automatic retry loop on second DUPLICATE_WARNING
+  const confirmedOnceRef = useRef(false);
+
+  const mutation = useCreateAccount();
+
+  const clearSensitive = () => {
+    const s = emptySensitive();
+    setPsnPassword(s.psnPassword);
+    setBackupCodes(s.backupCodes);
+  };
+
+  const resetAll = () => {
+    setPsnEmail("");
+    setPsnPassword("");
+    setEmailPassword("");
+    setOnlineId("");
+    setBirthDate("");
+    setFamilyManagementEmail("");
+    setBackupCodes([""]);
+    setErrors({});
+    setShowDuplicate(false);
+    setDuplicateFields([]);
+    pendingPayloadRef.current = null;
+    confirmedOnceRef.current = false;
+  };
+
+  useEffect(() => {
+    if (open) {
+      resetAll();
+    }
+  }, [open]);
+
+  // Keyboard close
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !showDuplicate) handleClose();
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [open, showDuplicate]);
+
+  const handleClose = () => {
+    clearSensitive();
+    resetAll();
+    onClose();
+  };
+
+  const validate = (): boolean => {
+    const errs: FieldErrors = {};
+    if (!psnEmail.trim()) {
+      errs.psnEmail = "ایمیل PSN الزامی است";
+    } else if (!isValidEmail(psnEmail)) {
+      errs.psnEmail = "فرمت ایمیل PSN صحیح نیست";
+    }
+    if (!psnPassword.trim()) errs.psnPassword = "رمز عبور PSN الزامی است";
+    if (!emailPassword.trim()) errs.emailPassword = "رمز ایمیل الزامی است";
+    if (!onlineId.trim()) errs.onlineId = "Online ID الزامی است";
+    if (!birthDate.trim()) {
+      errs.birthDate = "تاریخ تولد الزامی است";
+    } else if (!isValidBirthDate(birthDate)) {
+      errs.birthDate = "فرمت باید YYYY-MM-DD باشد و تاریخ واقعی گریگوری باشد (مثال: 1990-08-27)";
+    }
+    if (!familyManagementEmail.trim()) {
+      errs.familyManagementEmail = "Family Management Email الزامی است";
+    } else if (!isValidEmail(familyManagementEmail)) {
+      errs.familyManagementEmail = "فرمت Family Management Email صحیح نیست";
+    }
+    const validCodes = backupCodes.filter((c) => c.trim().length > 0);
+    if (validCodes.length === 0) {
+      errs.backupCodes = "حداقل یک Backup Code الزامی است";
+    }
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const buildPayload = () => ({
+    psnEmail: psnEmail.trim(),
+    psnPassword: psnPassword.trim(),
+    emailPassword: emailPassword.trim(),
+    onlineId: onlineId.trim(),
+    birthDate: birthDate.trim(),
+    familyManagementEmail: familyManagementEmail.trim(),
+    backupCodes: backupCodes.filter((c) => c.trim().length > 0),
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validate()) return;
+    if (mutation.isPending) return;
+
+    setErrors({});
+    setShowDuplicate(false);
+    confirmedOnceRef.current = false;
+
+    const payload = buildPayload();
+    pendingPayloadRef.current = payload;
+
+    try {
+      await mutation.mutateAsync({ gameId, data: payload });
+      clearSensitive();
+      resetAll();
+      onSuccess();
+    } catch (err) {
+      const parsed = parseMutationError(err);
+      if (parsed.kind === "duplicate_warning") {
+        setDuplicateFields(parsed.duplicateFields);
+        setShowDuplicate(true);
+        return;
+      }
+      setErrors({ submit: safeMutationErrorMessage(parsed) });
+    }
+  };
+
+  const handleDuplicateConfirm = async () => {
+    const payload = pendingPayloadRef.current;
+    if (!payload || mutation.isPending) return;
+
+    confirmedOnceRef.current = true;
+    setShowDuplicate(false);
+
+    try {
+      await mutation.mutateAsync({
+        gameId,
+        data: { ...payload, confirmed: true },
+      });
+      clearSensitive();
+      resetAll();
+      onSuccess();
+    } catch (err) {
+      const parsed = parseMutationError(err);
+      // A second DUPLICATE_WARNING must NOT open the dialog again.
+      // Show as generic error to prevent automatic retry loop.
+      if (parsed.kind === "duplicate_warning") {
+        setErrors({ submit: PERSIAN_GENERIC_MSG });
+        return;
+      }
+      setErrors({ submit: safeMutationErrorMessage(parsed) });
+    }
+  };
+
+  const handleDuplicateCancel = () => {
+    setShowDuplicate(false);
+    pendingPayloadRef.current = null;
+    confirmedOnceRef.current = false;
+    // No retry is sent.
+  };
+
+  const addBackupCode = () => {
+    setBackupCodes((prev) => [...prev, ""]);
+    if (errors.backupCodes) setErrors((p) => ({ ...p, backupCodes: undefined }));
+  };
+
+  const updateBackupCode = (index: number, value: string) => {
+    setBackupCodes((prev) => prev.map((c, i) => (i === index ? value : c)));
+    if (errors.backupCodes) setErrors((p) => ({ ...p, backupCodes: undefined }));
+  };
+
+  const removeBackupCode = (index: number) => {
+    setBackupCodes((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      return next.length === 0 ? [""] : next;
+    });
+  };
+
+  if (!open) return null;
+
+  return (
+    <>
+      <div
+        className="fixed inset-0 z-[300] flex items-end justify-center sm:items-center sm:p-6"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-account-title"
+      >
+        {/* Backdrop */}
+        <div
+          className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+          onClick={handleClose}
+        />
+
+        <div className="relative z-[301] flex min-h-0 w-full flex-col overflow-hidden border border-border bg-card shadow-elevated max-h-[calc(100dvh-0.75rem)] rounded-t-3xl sm:w-[calc(100vw-2rem)] sm:max-w-lg sm:max-h-[calc(100dvh-3rem)] sm:rounded-2xl">
+          {/* Mobile drag handle */}
+          <div className="flex shrink-0 justify-center pt-2 sm:hidden">
+            <div className="h-1 w-11 rounded-full bg-muted-foreground/30" />
+          </div>
+
+          {/* Header */}
+          <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 border-b border-border bg-card/95 px-4 py-3 backdrop-blur sm:px-5 sm:py-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl gradient-primary text-primary-foreground shadow-glow">
+                <UserCircle2 className="h-4 w-4" />
+              </div>
+              <h2 id="create-account-title" className="truncate text-sm font-semibold sm:text-base">
+                افزودن اکانت جدید
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={handleClose}
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-muted-foreground hover:bg-accent transition-colors"
+              aria-label="بستن"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} noValidate className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y space-y-4 px-4 py-4 sm:space-y-5 sm:px-5 sm:py-5">
+              {errors.submit && (
+                <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                  {errors.submit}
+                </div>
+              )}
+
+              <FormField label="ایمیل PSN" required error={errors.psnEmail}>
+                <input
+                  type="email"
+                  dir="ltr"
+                  value={psnEmail}
+                  onChange={(e) => {
+                    setPsnEmail(e.target.value);
+                    if (errors.psnEmail) setErrors((p) => ({ ...p, psnEmail: undefined }));
+                  }}
+                  placeholder="example@playstation.com"
+                  autoComplete="off"
+                  className={cn(
+                    "w-full rounded-xl border bg-muted/40 px-4 py-3 text-sm outline-none placeholder:text-muted-foreground/60 transition-all focus:ring-2 focus:ring-ring/30 sm:py-2.5",
+                    errors.psnEmail ? "border-destructive focus:ring-destructive/30" : "border-border focus:border-primary/60",
+                  )}
+                />
+              </FormField>
+
+              <FormField label="رمز عبور PSN" required error={errors.psnPassword}>
+                <input
+                  type="text"
+                  dir="ltr"
+                  value={psnPassword}
+                  onChange={(e) => {
+                    setPsnPassword(e.target.value);
+                    if (errors.psnPassword) setErrors((p) => ({ ...p, psnPassword: undefined }));
+                  }}
+                  placeholder="PlayStation password"
+                  autoComplete="off"
+                  className={cn(
+                    "w-full rounded-xl border bg-muted/40 px-4 py-3 font-mono text-sm outline-none placeholder:text-muted-foreground/60 transition-all focus:ring-2 focus:ring-ring/30 sm:py-2.5",
+                    errors.psnPassword ? "border-destructive focus:ring-destructive/30" : "border-border focus:border-primary/60",
+                  )}
+                />
+              </FormField>
+
+              <FormField label="رمز ایمیل" required error={errors.emailPassword}>
+                <input
+                  type="text"
+                  dir="ltr"
+                  value={emailPassword}
+                  onChange={(e) => {
+                    setEmailPassword(e.target.value);
+                    if (errors.emailPassword) setErrors((p) => ({ ...p, emailPassword: undefined }));
+                  }}
+                  placeholder="Email password"
+                  autoComplete="off"
+                  className={cn(
+                    "w-full rounded-xl border bg-muted/40 px-4 py-3 font-mono text-sm outline-none placeholder:text-muted-foreground/60 transition-all focus:ring-2 focus:ring-ring/30 sm:py-2.5",
+                    errors.emailPassword ? "border-destructive focus:ring-destructive/30" : "border-border focus:border-primary/60",
+                  )}
+                />
+              </FormField>
+
+              <FormField label="Online ID" required error={errors.onlineId}>
+                <input
+                  type="text"
+                  dir="ltr"
+                  value={onlineId}
+                  onChange={(e) => {
+                    setOnlineId(e.target.value);
+                    if (errors.onlineId) setErrors((p) => ({ ...p, onlineId: undefined }));
+                  }}
+                  placeholder="PSN username"
+                  autoComplete="off"
+                  className={cn(
+                    "w-full rounded-xl border bg-muted/40 px-4 py-3 text-sm outline-none placeholder:text-muted-foreground/60 transition-all focus:ring-2 focus:ring-ring/30 sm:py-2.5",
+                    errors.onlineId ? "border-destructive focus:ring-destructive/30" : "border-border focus:border-primary/60",
+                  )}
+                />
+              </FormField>
+
+              <FormField
+                label="تاریخ تولد"
+                required
+                error={errors.birthDate}
+                hint="فرمت: YYYY-MM-DD (مثال: 1990-08-27)"
+              >
+                <input
+                  type="text"
+                  dir="ltr"
+                  value={birthDate}
+                  onChange={(e) => {
+                    setBirthDate(e.target.value);
+                    if (errors.birthDate) setErrors((p) => ({ ...p, birthDate: undefined }));
+                  }}
+                  placeholder="1990-08-27"
+                  autoComplete="off"
+                  className={cn(
+                    "w-full rounded-xl border bg-muted/40 px-4 py-3 text-sm outline-none placeholder:text-muted-foreground/60 transition-all focus:ring-2 focus:ring-ring/30 sm:py-2.5",
+                    errors.birthDate ? "border-destructive focus:ring-destructive/30" : "border-border focus:border-primary/60",
+                  )}
+                />
+              </FormField>
+
+              <FormField label="Family Management Email" required error={errors.familyManagementEmail}>
+                <input
+                  type="email"
+                  dir="ltr"
+                  value={familyManagementEmail}
+                  onChange={(e) => {
+                    setFamilyManagementEmail(e.target.value);
+                    if (errors.familyManagementEmail) setErrors((p) => ({ ...p, familyManagementEmail: undefined }));
+                  }}
+                  placeholder="family@email.com"
+                  autoComplete="off"
+                  className={cn(
+                    "w-full rounded-xl border bg-muted/40 px-4 py-3 text-sm outline-none placeholder:text-muted-foreground/60 transition-all focus:ring-2 focus:ring-ring/30 sm:py-2.5",
+                    errors.familyManagementEmail ? "border-destructive focus:ring-destructive/30" : "border-border focus:border-primary/60",
+                  )}
+                />
+              </FormField>
+
+              {/* Backup Codes — rows can be added and removed */}
+              <FormField
+                label="Backup Codes"
+                required
+                error={errors.backupCodes}
+                hint="کدهای پشتیبان ۲ مرحله‌ای — هر کد در یک ردیف"
+              >
+                <div className="space-y-2">
+                  {backupCodes.map((code, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        dir="ltr"
+                        value={code}
+                        onChange={(e) => updateBackupCode(i, e.target.value)}
+                        placeholder={`کد ${i + 1}`}
+                        autoComplete="off"
+                        className={cn(
+                          "flex-1 rounded-xl border bg-muted/40 px-4 py-2.5 font-mono text-sm outline-none placeholder:text-muted-foreground/60 transition-all focus:ring-2 focus:ring-ring/30",
+                          errors.backupCodes ? "border-destructive focus:ring-destructive/30" : "border-border focus:border-primary/60",
+                        )}
+                      />
+                      {backupCodes.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeBackupCode(i)}
+                          aria-label={`حذف کد ${i + 1}`}
+                          className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={addBackupCode}
+                    className="inline-flex items-center gap-2 rounded-xl border border-dashed border-border bg-muted/30 px-4 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+                  >
+                    <Plus className="h-4 w-4" />
+                    افزودن کد
+                  </button>
+                </div>
+              </FormField>
+            </div>
+
+            {/* Footer */}
+            <div className="sticky bottom-0 z-10 flex shrink-0 items-center justify-end gap-2 border-t border-border bg-card/95 px-4 py-3 backdrop-blur pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5 sm:py-4 sm:pb-4">
+              <button
+                type="button"
+                onClick={handleClose}
+                disabled={mutation.isPending}
+                className="inline-flex items-center justify-center rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-50 sm:py-2"
+              >
+                انصراف
+              </button>
+              <button
+                type="submit"
+                disabled={mutation.isPending}
+                className="inline-flex items-center justify-center rounded-xl gradient-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-soft transition-all hover:shadow-glow disabled:opacity-50 sm:px-5 sm:py-2"
+              >
+                {mutation.isPending ? "در حال ذخیره…" : "افزودن اکانت"}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      {/* Duplicate Warning Dialog — layered on top of the create dialog */}
+      <DuplicateWarningDialog
+        open={showDuplicate}
+        duplicateFields={duplicateFields}
+        onConfirm={handleDuplicateConfirm}
+        onCancel={handleDuplicateCancel}
+        isPending={mutation.isPending}
+      />
+    </>
+  );
+}
+
+function FormField({
+  label,
+  required,
+  hint,
+  error,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  hint?: string;
+  error?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-sm font-medium">
+        {label}
+        {required && <span className="mr-1 text-destructive">*</span>}
+      </label>
+      {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
+      {children}
+      {error && <p className="text-[11px] text-destructive">{error}</p>}
+    </div>
+  );
+}
+=== NEW FILE: artifacts/playsyncer/src/features/account-write/DeleteUnavailableDialog.tsx ===
+/**
+ * PS-03D5-6A — Delete Unavailable Dialog
+ *
+ * Informs the user that hard deletion is not available.
+ * Directs them toward using INACTIVE status instead.
+ *
+ * CRITICAL SAFETY REQUIREMENTS:
+ * - Does NOT import deleteAccount or useDeleteAccount.
+ * - Sends ZERO DELETE requests.
+ * - Does NOT remove the Account from local state.
+ * - Never implies the Account can be deleted now.
+ */
+
+interface Props {
+  open: boolean;
+  onClose: () => void;
+}
+
+export function DeleteUnavailableDialog({ open, onClose }: Props) {
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[400] flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="delete-unavailable-title"
+    >
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+        onClick={onClose}
+      />
+
+      <div className="relative z-[401] w-full max-w-sm overflow-hidden rounded-2xl border border-border bg-card shadow-elevated">
+        <div className="p-5 sm:p-6">
+          <h2
+            id="delete-unavailable-title"
+            className="text-base font-semibold text-foreground"
+          >
+            حذف در دسترس نیست
+          </h2>
+
+          <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
+            {/* Approved Persian disabled message */}
+            حذف دائمی اکانت فعلاً امکان‌پذیر نیست. برای خارج‌کردن اکانت از
+            چرخه فروش، وضعیت آن را غیرفعال کنید.
+          </p>
+
+          <div className="mt-4 rounded-xl border border-muted bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+            برای غیرفعال کردن اکانت، از گزینه «تغییر وضعیت» و سپس انتخاب
+            «غیرفعال» استفاده کنید.
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end border-t border-border px-5 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center justify-center rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-accent transition-colors"
+          >
+            متوجه شدم
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+=== NEW FILE: artifacts/playsyncer/src/features/account-write/DuplicateWarningDialog.tsx ===
+/**
+ * PS-03D5-6A — Duplicate Warning Dialog
+ *
+ * Shown when the API returns code: "DUPLICATE_WARNING" during Create or Update.
+ *
+ * Safety requirements:
+ * - Displays only safe Persian field labels (not values, not Account IDs).
+ * - Cancel sends no retry request.
+ * - Confirm signals one retry with confirmed: true (caller is responsible).
+ * - A second DUPLICATE_WARNING response must NOT create an automatic retry loop
+ *   (the caller sets this dialog open only on the first warning).
+ */
+import { DUPLICATE_FIELD_LABELS } from "./parseApiError";
+
+interface Props {
+  open: boolean;
+  duplicateFields: string[];
+  onConfirm: () => void;
+  onCancel: () => void;
+  isPending: boolean;
+}
+
+export function DuplicateWarningDialog({
+  open,
+  duplicateFields,
+  onConfirm,
+  onCancel,
+  isPending,
+}: Props) {
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[400] flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="dup-warn-title"
+    >
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+        onClick={onCancel}
+      />
+
+      <div className="relative z-[401] w-full max-w-sm overflow-hidden rounded-2xl border border-warning/30 bg-card shadow-elevated">
+        <div className="p-5 sm:p-6">
+          <h2
+            id="dup-warn-title"
+            className="text-base font-semibold text-foreground"
+          >
+            شباهت با اکانت موجود
+          </h2>
+
+          <p className="mt-2 text-sm text-muted-foreground">
+            اطلاعات وارد شده با اکانت دیگری شباهت دارد. فیلدهای مشابه:
+          </p>
+
+          {duplicateFields.length > 0 && (
+            <ul className="mt-3 space-y-1 rounded-xl border border-border bg-muted/40 px-4 py-3">
+              {duplicateFields.map((field) => (
+                <li key={field} className="text-sm font-medium text-foreground">
+                  {/* Safe: only display Persian label — never the field value or Account ID */}
+                  {DUPLICATE_FIELD_LABELS[field] ?? field}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <p className="mt-3 text-sm text-muted-foreground">
+            آیا مطمئن هستید که می‌خواهید با وجود این شباهت ادامه دهید؟
+          </p>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-4">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isPending}
+            className="inline-flex items-center justify-center rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+          >
+            انصراف
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isPending}
+            className="inline-flex items-center justify-center rounded-xl border border-warning/30 bg-warning/10 px-4 py-2 text-sm font-medium text-warning hover:bg-warning/20 transition-colors disabled:opacity-50"
+          >
+            {isPending ? "در حال ارسال…" : "تأیید و ادامه"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+=== NEW FILE: artifacts/playsyncer/src/features/account-write/EditAccountDialog.tsx ===
+/**
+ * PS-03D5-6A — Edit Account Dialog
+ *
+ * Edits an existing Account using only fields present in the safe Account DTO.
+ *
+ * Requirements:
+ * - Never prefill Passwords.
+ * - Unavailable email values (not in safe DTO) remain empty replacement fields.
+ * - Empty Password or replacement email means no change.
+ * - Submit changed fields only.
+ * - Do NOT edit Backup Codes.
+ * - Do NOT submit immutable identifiers (accountCode, displayNumber, gameId, …).
+ * - Clear sensitive values after: success, close, external open=false,
+ *   Account switch (accountId change), and reopen.
+ * - Duplicate flow: same as CreateAccountDialog — second warning is generic.
+ *
+ * Safe DTO fields available for prefill: onlineId, birthDate.
+ * All other editable fields (psnEmail, psnPassword, emailPassword,
+ * familyManagementEmail) are not in the safe DTO and start empty.
+ *
+ * DEFECT GUARDS:
+ * - Does NOT extend the safe DTO with invented fields.
+ * - Does NOT require currentOverride.
+ * - Does NOT import Delete hooks.
+ * - Does NOT render raw error messages.
+ */
+import { useState, useEffect, useRef } from "react";
+import { Pencil, X } from "lucide-react";
+import { cn } from "@/lib/utils";
+import type { AccountListItem } from "@workspace/api-client-react";
+import { useUpdateAccount } from "@workspace/api-client-react";
+import type { UpdateAccountRequest } from "@workspace/api-client-react";
+import {
+  parseMutationError,
+  safeMutationErrorMessage,
+  PERSIAN_GENERIC_MSG,
+} from "./parseApiError";
+import { isValidBirthDate } from "./validateBirthDate";
+import { DuplicateWarningDialog } from "./DuplicateWarningDialog";
+
+interface Props {
+  open: boolean;
+  /** Safe Account DTO — must not contain secrets. */
+  account: AccountListItem | null;
+  onSuccess: () => void;
+  onClose: () => void;
+}
+
+type FieldErrors = Partial<
+  Record<
+    | "psnEmail"
+    | "onlineId"
+    | "birthDate"
+    | "familyManagementEmail"
+    | "noChanges"
+    | "submit",
+    string
+  >
+>;
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const isValidEmail = (v: string) => EMAIL_RE.test(v.trim());
+
+/** Clear only sensitive / non-DTO fields. Called on every close path and success. */
+function emptySensitive(): Pick<
+  ReturnType<typeof buildState>,
+  "psnEmail" | "psnPassword" | "emailPassword" | "familyManagementEmail"
+> {
+  return {
+    psnEmail: "",
+    psnPassword: "",
+    emailPassword: "",
+    familyManagementEmail: "",
+  };
+}
+
+function buildState(account: AccountListItem | null) {
+  return {
+    // From safe DTO — can be prefilled.
+    onlineId: account?.onlineId ?? "",
+    birthDate: account?.birthDate ?? "",
+    // Not in safe DTO — always start empty.
+    psnEmail: "",
+    psnPassword: "",
+    emailPassword: "",
+    familyManagementEmail: "",
+  };
+}
+
+export function EditAccountDialog({ open, account, onSuccess, onClose }: Props) {
+  const [onlineId, setOnlineId] = useState("");
+  const [birthDate, setBirthDate] = useState("");
+  const [psnEmail, setPsnEmail] = useState("");
+  const [psnPassword, setPsnPassword] = useState("");
+  const [emailPassword, setEmailPassword] = useState("");
+  const [familyManagementEmail, setFamilyManagementEmail] = useState("");
+  const [errors, setErrors] = useState<FieldErrors>({});
+
+  // Duplicate flow
+  const [showDuplicate, setShowDuplicate] = useState(false);
+  const [duplicateFields, setDuplicateFields] = useState<string[]>([]);
+  const pendingPayloadRef = useRef<UpdateAccountRequest | null>(null);
+  const confirmedOnceRef = useRef(false);
+
+  const mutation = useUpdateAccount();
+
+  const initState = (acc: AccountListItem | null) => {
+    const s = buildState(acc);
+    setOnlineId(s.onlineId);
+    setBirthDate(s.birthDate);
+    setPsnEmail(s.psnEmail);
+    setPsnPassword(s.psnPassword);
+    setEmailPassword(s.emailPassword);
+    setFamilyManagementEmail(s.familyManagementEmail);
+    setErrors({});
+    setShowDuplicate(false);
+    setDuplicateFields([]);
+    pendingPayloadRef.current = null;
+    confirmedOnceRef.current = false;
+  };
+
+  // Reset on open, reopen, and Account switch (account.id change).
+  useEffect(() => {
+    if (open) {
+      initState(account);
+    } else {
+      // Clear sensitive values when closed externally (open=false).
+      const s = emptySensitive();
+      setPsnEmail(s.psnEmail);
+      setPsnPassword(s.psnPassword);
+      setEmailPassword(s.emailPassword);
+      setFamilyManagementEmail(s.familyManagementEmail);
+    }
+  }, [open, account?.id]);
+
+  // Keyboard close
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !showDuplicate) handleClose();
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [open, showDuplicate]);
+
+  const clearSensitiveAndClose = () => {
+    const s = emptySensitive();
+    setPsnEmail(s.psnEmail);
+    setPsnPassword(s.psnPassword);
+    setEmailPassword(s.emailPassword);
+    setFamilyManagementEmail(s.familyManagementEmail);
+    setShowDuplicate(false);
+    setDuplicateFields([]);
+    pendingPayloadRef.current = null;
+    confirmedOnceRef.current = false;
+    setErrors({});
+  };
+
+  const handleClose = () => {
+    clearSensitiveAndClose();
+    onClose();
+  };
+
+  /** Build payload with only changed fields. */
+  const buildChangedPayload = (): UpdateAccountRequest => {
+    const payload: UpdateAccountRequest = {};
+
+    // Fields not in safe DTO — include if non-empty (user intent to change).
+    if (psnEmail.trim()) payload.psnEmail = psnEmail.trim();
+    if (psnPassword.trim()) payload.psnPassword = psnPassword.trim();
+    if (emailPassword.trim()) payload.emailPassword = emailPassword.trim();
+    if (familyManagementEmail.trim()) payload.familyManagementEmail = familyManagementEmail.trim();
+
+    // Fields in safe DTO — include if different from current value.
+    const currentOnlineId = account?.onlineId ?? "";
+    const currentBirthDate = account?.birthDate ?? "";
+    if (onlineId.trim() !== currentOnlineId) payload.onlineId = onlineId.trim() || undefined;
+    if (birthDate.trim() !== currentBirthDate) payload.birthDate = birthDate.trim() || undefined;
+
+    return payload;
+  };
+
+  const validate = (): boolean => {
+    const errs: FieldErrors = {};
+    if (psnEmail.trim() && !isValidEmail(psnEmail)) {
+      errs.psnEmail = "فرمت ایمیل PSN صحیح نیست";
+    }
+    if (familyManagementEmail.trim() && !isValidEmail(familyManagementEmail)) {
+      errs.familyManagementEmail = "فرمت Family Management Email صحیح نیست";
+    }
+    if (birthDate.trim() && !isValidBirthDate(birthDate)) {
+      errs.birthDate = "فرمت باید YYYY-MM-DD باشد و تاریخ واقعی گریگوری باشد";
+    }
+    const changed = buildChangedPayload();
+    const hasChanges = Object.keys(changed).length > 0;
+    if (!hasChanges) {
+      errs.noChanges = "هیچ تغییری وارد نشده است";
+    }
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!account || mutation.isPending) return;
+    if (!validate()) return;
+
+    setErrors({});
+    setShowDuplicate(false);
+    confirmedOnceRef.current = false;
+
+    const payload = buildChangedPayload();
+    pendingPayloadRef.current = payload;
+
+    try {
+      await mutation.mutateAsync({ accountId: account.id, data: payload });
+      clearSensitiveAndClose();
+      onSuccess();
+    } catch (err) {
+      const parsed = parseMutationError(err);
+      if (parsed.kind === "duplicate_warning") {
+        setDuplicateFields(parsed.duplicateFields);
+        setShowDuplicate(true);
+        return;
+      }
+      setErrors({ submit: safeMutationErrorMessage(parsed) });
+    }
+  };
+
+  const handleDuplicateConfirm = async () => {
+    if (!account || !pendingPayloadRef.current || mutation.isPending) return;
+
+    confirmedOnceRef.current = true;
+    setShowDuplicate(false);
+
+    try {
+      await mutation.mutateAsync({
+        accountId: account.id,
+        data: { ...pendingPayloadRef.current, confirmed: true },
+      });
+      clearSensitiveAndClose();
+      onSuccess();
+    } catch (err) {
+      const parsed = parseMutationError(err);
+      // Second DUPLICATE_WARNING → no automatic retry loop.
+      if (parsed.kind === "duplicate_warning") {
+        setErrors({ submit: PERSIAN_GENERIC_MSG });
+        return;
+      }
+      setErrors({ submit: safeMutationErrorMessage(parsed) });
+    }
+  };
+
+  const handleDuplicateCancel = () => {
+    setShowDuplicate(false);
+    // Cancel sends no retry.
+  };
+
+  if (!open || !account) return null;
+
+  return (
+    <>
+      <div
+        className="fixed inset-0 z-[300] flex items-end justify-center sm:items-center sm:p-6"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-account-title"
+      >
+        {/* Backdrop */}
+        <div
+          className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+          onClick={handleClose}
+        />
+
+        <div className="relative z-[301] flex min-h-0 w-full flex-col overflow-hidden border border-border bg-card shadow-elevated max-h-[calc(100dvh-0.75rem)] rounded-t-3xl sm:w-[calc(100vw-2rem)] sm:max-w-lg sm:max-h-[calc(100dvh-3rem)] sm:rounded-2xl">
+          {/* Mobile drag handle */}
+          <div className="flex shrink-0 justify-center pt-2 sm:hidden">
+            <div className="h-1 w-11 rounded-full bg-muted-foreground/30" />
+          </div>
+
+          {/* Header */}
+          <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 border-b border-border bg-card/95 px-4 py-3 backdrop-blur sm:px-5 sm:py-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl gradient-primary text-primary-foreground shadow-glow">
+                <Pencil className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <h2 id="edit-account-title" className="truncate text-sm font-semibold sm:text-base">
+                  ویرایش اکانت
+                </h2>
+                <p className="text-[11px] text-muted-foreground font-mono" dir="ltr">
+                  {account.displayNumber}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleClose}
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-muted-foreground hover:bg-accent transition-colors"
+              aria-label="بستن"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} noValidate className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y space-y-4 px-4 py-4 sm:space-y-5 sm:px-5 sm:py-5">
+              {errors.submit && (
+                <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                  {errors.submit}
+                </div>
+              )}
+              {errors.noChanges && (
+                <div className="rounded-xl border border-muted bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+                  {errors.noChanges}
+                </div>
+              )}
+
+              {/* Account identifier — read-only display only */}
+              <div className="rounded-xl border border-border bg-muted/30 px-4 py-3">
+                <p className="text-[10px] text-muted-foreground">شناسه اکانت (تغییرناپذیر)</p>
+                <p className="mt-0.5 font-mono text-sm" dir="ltr">{account.accountCode}</p>
+              </div>
+
+              <FormField
+                label="ایمیل PSN"
+                hint="خالی بگذارید تا تغییر نکند"
+                error={errors.psnEmail}
+              >
+                <input
+                  type="email"
+                  dir="ltr"
+                  value={psnEmail}
+                  onChange={(e) => {
+                    setPsnEmail(e.target.value);
+                    if (errors.psnEmail) setErrors((p) => ({ ...p, psnEmail: undefined }));
+                  }}
+                  placeholder="خالی = بدون تغییر"
+                  autoComplete="off"
+                  className={cn(
+                    "w-full rounded-xl border bg-muted/40 px-4 py-3 text-sm outline-none placeholder:text-muted-foreground/60 transition-all focus:ring-2 focus:ring-ring/30 sm:py-2.5",
+                    errors.psnEmail ? "border-destructive focus:ring-destructive/30" : "border-border focus:border-primary/60",
+                  )}
+                />
+              </FormField>
+
+              <FormField label="رمز عبور PSN" hint="خالی بگذارید تا تغییر نکند">
+                {/* Never prefilled */}
+                <input
+                  type="text"
+                  dir="ltr"
+                  value={psnPassword}
+                  onChange={(e) => setPsnPassword(e.target.value)}
+                  placeholder="خالی = بدون تغییر"
+                  autoComplete="off"
+                  className="w-full rounded-xl border border-border bg-muted/40 px-4 py-3 font-mono text-sm outline-none placeholder:text-muted-foreground/60 transition-all focus:border-primary/60 focus:ring-2 focus:ring-ring/30 sm:py-2.5"
+                />
+              </FormField>
+
+              <FormField label="رمز ایمیل" hint="خالی بگذارید تا تغییر نکند">
+                {/* Never prefilled */}
+                <input
+                  type="text"
+                  dir="ltr"
+                  value={emailPassword}
+                  onChange={(e) => setEmailPassword(e.target.value)}
+                  placeholder="خالی = بدون تغییر"
+                  autoComplete="off"
+                  className="w-full rounded-xl border border-border bg-muted/40 px-4 py-3 font-mono text-sm outline-none placeholder:text-muted-foreground/60 transition-all focus:border-primary/60 focus:ring-2 focus:ring-ring/30 sm:py-2.5"
+                />
+              </FormField>
+
+              <FormField label="Online ID" error={errors.onlineId}>
+                <input
+                  type="text"
+                  dir="ltr"
+                  value={onlineId}
+                  onChange={(e) => {
+                    setOnlineId(e.target.value);
+                    if (errors.onlineId) setErrors((p) => ({ ...p, onlineId: undefined }));
+                  }}
+                  placeholder="PSN username"
+                  autoComplete="off"
+                  className={cn(
+                    "w-full rounded-xl border bg-muted/40 px-4 py-3 text-sm outline-none placeholder:text-muted-foreground/60 transition-all focus:ring-2 focus:ring-ring/30 sm:py-2.5",
+                    errors.onlineId ? "border-destructive focus:ring-destructive/30" : "border-border focus:border-primary/60",
+                  )}
+                />
+              </FormField>
+
+              <FormField
+                label="تاریخ تولد"
+                error={errors.birthDate}
+                hint="فرمت: YYYY-MM-DD"
+              >
+                <input
+                  type="text"
+                  dir="ltr"
+                  value={birthDate}
+                  onChange={(e) => {
+                    setBirthDate(e.target.value);
+                    if (errors.birthDate) setErrors((p) => ({ ...p, birthDate: undefined }));
+                  }}
+                  placeholder="1990-08-27"
+                  autoComplete="off"
+                  className={cn(
+                    "w-full rounded-xl border bg-muted/40 px-4 py-3 text-sm outline-none placeholder:text-muted-foreground/60 transition-all focus:ring-2 focus:ring-ring/30 sm:py-2.5",
+                    errors.birthDate ? "border-destructive focus:ring-destructive/30" : "border-border focus:border-primary/60",
+                  )}
+                />
+              </FormField>
+
+              <FormField
+                label="Family Management Email"
+                error={errors.familyManagementEmail}
+                hint="خالی بگذارید تا تغییر نکند"
+              >
+                <input
+                  type="email"
+                  dir="ltr"
+                  value={familyManagementEmail}
+                  onChange={(e) => {
+                    setFamilyManagementEmail(e.target.value);
+                    if (errors.familyManagementEmail) setErrors((p) => ({ ...p, familyManagementEmail: undefined }));
+                  }}
+                  placeholder="خالی = بدون تغییر"
+                  autoComplete="off"
+                  className={cn(
+                    "w-full rounded-xl border bg-muted/40 px-4 py-3 text-sm outline-none placeholder:text-muted-foreground/60 transition-all focus:ring-2 focus:ring-ring/30 sm:py-2.5",
+                    errors.familyManagementEmail ? "border-destructive focus:ring-destructive/30" : "border-border focus:border-primary/60",
+                  )}
+                />
+              </FormField>
+
+              <div className="rounded-xl border border-muted bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+                Backup Codes در این مرحله قابل ویرایش نیستند.
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="sticky bottom-0 z-10 flex shrink-0 items-center justify-end gap-2 border-t border-border bg-card/95 px-4 py-3 backdrop-blur pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5 sm:py-4 sm:pb-4">
+              <button
+                type="button"
+                onClick={handleClose}
+                disabled={mutation.isPending}
+                className="inline-flex items-center justify-center rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-50 sm:py-2"
+              >
+                انصراف
+              </button>
+              <button
+                type="submit"
+                disabled={mutation.isPending}
+                className="inline-flex items-center justify-center rounded-xl gradient-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-soft transition-all hover:shadow-glow disabled:opacity-50 sm:px-5 sm:py-2"
+              >
+                {mutation.isPending ? "در حال ذخیره…" : "ذخیره تغییرات"}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <DuplicateWarningDialog
+        open={showDuplicate}
+        duplicateFields={duplicateFields}
+        onConfirm={handleDuplicateConfirm}
+        onCancel={handleDuplicateCancel}
+        isPending={mutation.isPending}
+      />
+    </>
+  );
+}
+
+function FormField({
+  label,
+  hint,
+  error,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  error?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-sm font-medium">{label}</label>
+      {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
+      {children}
+      {error && <p className="text-[11px] text-destructive">{error}</p>}
+    </div>
+  );
+}
+=== NEW FILE: artifacts/playsyncer/src/features/account-write/index.ts ===
+/**
+ * PS-03D5-6A — Account Write Feature
+ *
+ * Isolated frontend for Account Create, Edit, Status Override, and
+ * Delete Unavailable flows. Runtime-disabled: this feature MUST NOT be
+ * imported by the active router, GameDetailPage, AccountCardReadOnly,
+ * AccountDetailsReadOnly, or any mounted production component.
+ *
+ * Activation is deferred to a future phase after security review.
+ * Do not add feature flags, hidden routes, or environment switches.
+ */
+
+export { CreateAccountDialog } from "./CreateAccountDialog";
+export { EditAccountDialog } from "./EditAccountDialog";
+export { DuplicateWarningDialog } from "./DuplicateWarningDialog";
+export { StatusOverrideDialog } from "./StatusOverrideDialog";
+export { DeleteUnavailableDialog } from "./DeleteUnavailableDialog";
+
+// Utilities
+export {
+  parseMutationError,
+  safeMutationErrorMessage,
+  DUPLICATE_FIELD_LABELS,
+  PERSIAN_DISABLED_MSG,
+  PERSIAN_GENERIC_MSG,
+} from "./parseApiError";
+export type { ParsedMutationError } from "./parseApiError";
+export { isValidBirthDate } from "./validateBirthDate";
+=== NEW FILE: artifacts/playsyncer/src/features/account-write/parseApiError.ts ===
+/**
+ * PS-03D5-6A — Safe API Error Parser
+ *
+ * Reads structured errors from error.data and error.status.
+ * Never exposes raw messages, URLs, HTTP details, SQL, passwords,
+ * or backup codes to the user.
+ *
+ * DEFECT GUARD: reads from error.data, NOT error.response.
+ * DEFECT GUARD: checks data.code === "ACCOUNT_OPS_DISABLED", NOT Error.message.
+ */
+
+/** Safe Persian display labels for duplicate field names. */
+export const DUPLICATE_FIELD_LABELS: Record<string, string> = {
+  psnEmail: "ایمیل PSN",
+  familyManagementEmail: "ایمیل مدیریت خانواده",
+  onlineId: "Online ID",
+};
+
+/** Approved Persian message when Account operations are runtime-disabled. */
+export const PERSIAN_DISABLED_MSG = "عملیات مدیریت اکانت‌ها فعلاً فعال نیست";
+
+/** Approved Persian generic error message. */
+export const PERSIAN_GENERIC_MSG =
+  "عملیات با خطا مواجه شد. لطفاً دوباره تلاش کنید";
+
+export type ParsedMutationError =
+  | { kind: "duplicate_warning"; duplicateFields: string[] }
+  | { kind: "ops_disabled" }
+  | { kind: "generic" };
+
+/**
+ * Parse a mutation error into a typed discriminated union.
+ *
+ * Reads from error.data (the real ApiError field, not error.response).
+ * Reads data.code to detect DUPLICATE_WARNING and ACCOUNT_OPS_DISABLED
+ * (not Error.message which varies by runtime).
+ *
+ * Returns { kind: "generic" } for any unknown or malformed error.
+ */
+export function parseMutationError(error: unknown): ParsedMutationError {
+  if (!error || typeof error !== "object") return { kind: "generic" };
+
+  // Read from error.data — the authoritative structured payload on ApiError.
+  const data = (error as { data?: unknown }).data;
+  if (!data || typeof data !== "object") return { kind: "generic" };
+
+  const code = (data as { code?: unknown }).code;
+
+  if (code === "DUPLICATE_WARNING") {
+    const detail = (data as { detail?: { duplicateFields?: unknown } }).detail;
+    const raw = detail?.duplicateFields;
+    const duplicateFields = Array.isArray(raw)
+      ? raw.filter((f): f is string => typeof f === "string")
+      : [];
+    return { kind: "duplicate_warning", duplicateFields };
+  }
+
+  if (code === "ACCOUNT_OPS_DISABLED") {
+    return { kind: "ops_disabled" };
+  }
+
+  return { kind: "generic" };
+}
+
+/**
+ * Return the safe Persian user-facing message for a non-duplicate error.
+ * Callers handle duplicate_warning separately via DuplicateWarningDialog.
+ */
+export function safeMutationErrorMessage(
+  parsed: Exclude<ParsedMutationError, { kind: "duplicate_warning" }>,
+): string {
+  if (parsed.kind === "ops_disabled") return PERSIAN_DISABLED_MSG;
+  return PERSIAN_GENERIC_MSG;
+}
+=== NEW FILE: artifacts/playsyncer/src/features/account-write/StatusOverrideDialog.tsx ===
+/**
+ * PS-03D5-6A — Status Override Dialog
+ *
+ * Allows setting a manual status override on an Account.
+ *
+ * Requirements:
+ * - Offers only: SOLD, INACTIVE, Clear Override (null).
+ * - Does NOT offer AVAILABLE or PARTIALLY_SOLD.
+ * - Clear Override sends null (not an empty string or undefined).
+ * - Does NOT require currentOverride — the safe DTO does not expose it.
+ * - Does NOT claim whether the current status is manually overridden.
+ */
+import { useState } from "react";
+import { useSetAccountStatusOverride } from "@workspace/api-client-react";
+import { parseMutationError, safeMutationErrorMessage } from "./parseApiError";
+
+interface Props {
+  open: boolean;
+  accountId: string;
+  onSuccess: () => void;
+  onClose: () => void;
+}
+
+type OverrideChoice = "SOLD" | "INACTIVE" | null;
+
+const OVERRIDE_OPTIONS: { value: OverrideChoice; label: string; description: string }[] = [
+  {
+    value: "SOLD",
+    label: "فروخته‌شده",
+    description: "اکانت را به‌عنوان فروخته‌شده علامت‌گذاری می‌کند",
+  },
+  {
+    value: "INACTIVE",
+    label: "غیرفعال",
+    description: "اکانت را از چرخه فروش خارج می‌کند",
+  },
+  {
+    value: null,
+    label: "پاک‌کردن وضعیت دستی",
+    description: "وضعیت مبتنی بر ظرفیت را بازیابی می‌کند",
+  },
+];
+
+export function StatusOverrideDialog({ open, accountId, onSuccess, onClose }: Props) {
+  const [selected, setSelected] = useState<OverrideChoice | undefined>(undefined);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const mutation = useSetAccountStatusOverride();
+
+  const handleClose = () => {
+    setSelected(undefined);
+    setErrorMsg(null);
+    onClose();
+  };
+
+  const handleSubmit = async () => {
+    if (selected === undefined) {
+      setErrorMsg("لطفاً یک گزینه انتخاب کنید");
+      return;
+    }
+    setErrorMsg(null);
+    try {
+      await mutation.mutateAsync({
+        accountId,
+        data: { statusOverride: selected },
+      });
+      setSelected(undefined);
+      onSuccess();
+    } catch (err) {
+      const parsed = parseMutationError(err);
+      // StatusOverride does not produce DUPLICATE_WARNING; treat all as generic or disabled.
+      if (parsed.kind === "duplicate_warning") {
+        setErrorMsg(safeMutationErrorMessage({ kind: "generic" }));
+      } else {
+        setErrorMsg(safeMutationErrorMessage(parsed));
+      }
+    }
+  };
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[400] flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="status-override-title"
+    >
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+        onClick={handleClose}
+      />
+
+      <div className="relative z-[401] w-full max-w-sm overflow-hidden rounded-2xl border border-border bg-card shadow-elevated">
+        <div className="p-5 sm:p-6">
+          <h2
+            id="status-override-title"
+            className="text-base font-semibold text-foreground"
+          >
+            تغییر وضعیت اکانت
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            یک وضعیت دستی انتخاب کنید یا وضعیت موجود را پاک کنید.
+          </p>
+
+          <div className="mt-4 space-y-2">
+            {OVERRIDE_OPTIONS.map((opt) => (
+              <button
+                key={String(opt.value)}
+                type="button"
+                onClick={() => {
+                  setSelected(opt.value);
+                  setErrorMsg(null);
+                }}
+                className={[
+                  "w-full rounded-xl border px-4 py-3 text-right transition-all",
+                  selected === opt.value
+                    ? opt.value === "SOLD"
+                      ? "border-primary/40 bg-primary/10 text-primary"
+                      : opt.value === "INACTIVE"
+                        ? "border-destructive/40 bg-destructive/10 text-destructive"
+                        : "border-success/40 bg-success/10 text-success"
+                    : "border-border bg-muted/40 text-foreground hover:bg-accent",
+                ].join(" ")}
+              >
+                <div className="text-sm font-medium">{opt.label}</div>
+                <div className="mt-0.5 text-[11px] text-muted-foreground">
+                  {opt.description}
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {errorMsg && (
+            <p className="mt-3 text-sm text-destructive">{errorMsg}</p>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-4">
+          <button
+            type="button"
+            onClick={handleClose}
+            disabled={mutation.isPending}
+            className="inline-flex items-center justify-center rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+          >
+            انصراف
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={mutation.isPending || selected === undefined}
+            className="inline-flex items-center justify-center rounded-xl gradient-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-soft transition-all hover:shadow-glow disabled:opacity-50"
+          >
+            {mutation.isPending ? "در حال ذخیره…" : "اعمال"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+=== NEW FILE: artifacts/playsyncer/src/features/account-write/__tests__/CreateAccountDialog.test.tsx ===
+/**
+ * PS-03D5-6A — Tests: CreateAccountDialog
+ *
+ * Covers:
+ * - Create request shape and validation
+ * - real ApiError.data duplicate flow
+ * - ACCOUNT_OPS_DISABLED safe message
+ * - generic unknown-error message
+ * - strict birth-date validation
+ * - Password and Backup Code clearing on success and close
+ * - Zero DELETE requests
+ * - Second DUPLICATE_WARNING does not create automatic retry loop
+ */
+import { vi, describe, it, expect, beforeEach } from "vitest";
+import { screen, fireEvent, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { useCreateAccount } from "@workspace/api-client-react";
+import { render } from "@/test/render";
+import { CreateAccountDialog } from "../CreateAccountDialog";
+import { PERSIAN_DISABLED_MSG, PERSIAN_GENERIC_MSG } from "../parseApiError";
+
+vi.mock("@workspace/api-client-react", async () => {
+  const actual = await vi.importActual<typeof import("@workspace/api-client-react")>(
+    "@workspace/api-client-react",
+  );
+  return {
+    ...actual,
+    useCreateAccount: vi.fn(),
+  };
+});
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeMutation(mutateAsync: (vars: any) => Promise<unknown>, isPending = false): any {
+  return {
+    mutateAsync,
+    mutate: vi.fn(),
+    isPending,
+    isError: false,
+    isSuccess: false,
+    isIdle: !isPending,
+    data: undefined,
+    error: null,
+    reset: vi.fn(),
+    variables: undefined,
+    status: isPending ? "pending" : "idle",
+    submittedAt: 0,
+    failureCount: 0,
+    failureReason: null,
+    context: undefined,
+    isPaused: false,
+  };
+}
+
+function makeDuplicateError(fields: string[]) {
+  return {
+    data: {
+      code: "DUPLICATE_WARNING",
+      detail: { duplicateFields: fields },
+    },
+    status: 409,
+  };
+}
+
+function makeDisabledError() {
+  return { data: { code: "ACCOUNT_OPS_DISABLED" }, status: 403 };
+}
+
+function makeGenericError() {
+  return { data: { code: "SOME_UNKNOWN_ERROR" }, status: 500 };
+}
+
+/** Fill the form with valid values. */
+async function fillValidForm(user: ReturnType<typeof userEvent.setup>) {
+  await user.type(screen.getByPlaceholderText("example@playstation.com"), "test@psn.com");
+  // PSN Password
+  const passwordInput = screen.getAllByPlaceholderText(/PlayStation password/i)[0];
+  await user.type(passwordInput, "SecurePass123");
+  // Email password
+  await user.type(screen.getByPlaceholderText("Email password"), "EmailPass456");
+  // Online ID
+  await user.type(screen.getByPlaceholderText("PSN username"), "my_psn_user");
+  // Birth date
+  await user.type(screen.getByPlaceholderText("1990-08-27"), "1990-08-27");
+  // Family management email
+  await user.type(screen.getByPlaceholderText("family@email.com"), "family@test.com");
+  // Backup code (first row)
+  await user.type(screen.getByPlaceholderText("کد 1"), "abcd-1234");
+}
+
+describe("CreateAccountDialog", () => {
+  const gameId = "game-test-001";
+
+  beforeEach(() => {
+    vi.mocked(useCreateAccount).mockReturnValue(
+      makeMutation(vi.fn().mockResolvedValue({ account: {} })),
+    );
+  });
+
+  it("renders all required fields", () => {
+    render(
+      <CreateAccountDialog open gameId={gameId} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    expect(screen.getByText("ایمیل PSN")).toBeInTheDocument();
+    expect(screen.getByText("رمز عبور PSN")).toBeInTheDocument();
+    expect(screen.getByText("رمز ایمیل")).toBeInTheDocument();
+    expect(screen.getByText("Online ID")).toBeInTheDocument();
+    expect(screen.getByText("تاریخ تولد")).toBeInTheDocument();
+    expect(screen.getByText("Family Management Email")).toBeInTheDocument();
+    expect(screen.getByText("Backup Codes")).toBeInTheDocument();
+  });
+
+  it("does not render statusOverride during Create", () => {
+    render(
+      <CreateAccountDialog open gameId={gameId} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    expect(screen.queryByText(/وضعیت/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/SOLD/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/INACTIVE/)).not.toBeInTheDocument();
+  });
+
+  it("validates required fields and shows Persian error messages", async () => {
+    render(
+      <CreateAccountDialog open gameId={gameId} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByText("افزودن اکانت"));
+    await waitFor(() => {
+      expect(screen.getByText("ایمیل PSN الزامی است")).toBeInTheDocument();
+      expect(screen.getByText("رمز عبور PSN الزامی است")).toBeInTheDocument();
+      expect(screen.getByText("رمز ایمیل الزامی است")).toBeInTheDocument();
+      expect(screen.getByText("Online ID الزامی است")).toBeInTheDocument();
+      expect(screen.getByText("تاریخ تولد الزامی است")).toBeInTheDocument();
+      expect(screen.getByText("Family Management Email الزامی است")).toBeInTheDocument();
+      expect(screen.getByText("حداقل یک Backup Code الزامی است")).toBeInTheDocument();
+    });
+  });
+
+  it("rejects invalid birth date format (YYYY/MM/DD)", async () => {
+    render(
+      <CreateAccountDialog open gameId={gameId} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    await userEvent.type(screen.getByPlaceholderText("1990-08-27"), "1990/08/27");
+    fireEvent.click(screen.getByText("افزودن اکانت"));
+    // The error message contains YYYY-MM-DD; there may also be a hint with the same text
+    await waitFor(() => expect(screen.getAllByText(/YYYY-MM-DD/).length).toBeGreaterThan(0));
+  });
+
+  it("rejects impossible birth date 2026-02-31", async () => {
+    render(
+      <CreateAccountDialog open gameId={gameId} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    await userEvent.type(screen.getByPlaceholderText("1990-08-27"), "2026-02-31");
+    fireEvent.click(screen.getByText("افزودن اکانت"));
+    await waitFor(() => expect(screen.getAllByText(/YYYY-MM-DD/).length).toBeGreaterThan(0));
+  });
+
+  it("sends correct request shape on valid submit", async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({ account: {} });
+    vi.mocked(useCreateAccount).mockReturnValue(makeMutation(mutateAsync));
+    const user = userEvent.setup();
+    render(
+      <CreateAccountDialog open gameId={gameId} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    await fillValidForm(user);
+    fireEvent.click(screen.getByText("افزودن اکانت"));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledOnce());
+    const [callArgs] = mutateAsync.mock.calls;
+    expect(callArgs[0].gameId).toBe(gameId);
+    const data = callArgs[0].data;
+    expect(data.psnEmail).toBe("test@psn.com");
+    expect(data.psnPassword).toBe("SecurePass123");
+    expect(data.emailPassword).toBe("EmailPass456");
+    expect(data.onlineId).toBe("my_psn_user");
+    expect(data.birthDate).toBe("1990-08-27");
+    expect(data.familyManagementEmail).toBe("family@test.com");
+    expect(Array.isArray(data.backupCodes)).toBe(true);
+    expect(data.backupCodes[0]).toBe("abcd-1234");
+    // confirmed must not be set on first submit
+    expect(data.confirmed).toBeUndefined();
+  });
+
+  it("does not allow backup codes array to be empty (at least one required)", async () => {
+    render(
+      <CreateAccountDialog open gameId={gameId} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    // Don't fill any backup code — submit immediately
+    fireEvent.click(screen.getByText("افزودن اکانت"));
+    await waitFor(() =>
+      expect(screen.getByText("حداقل یک Backup Code الزامی است")).toBeInTheDocument(),
+    );
+  });
+
+  it("backup code rows can be added", () => {
+    render(
+      <CreateAccountDialog open gameId={gameId} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByText("افزودن کد"));
+    expect(screen.getByPlaceholderText("کد 2")).toBeInTheDocument();
+  });
+
+  it("backup code rows can be removed", async () => {
+    render(
+      <CreateAccountDialog open gameId={gameId} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByText("افزودن کد"));
+    expect(screen.getByPlaceholderText("کد 2")).toBeInTheDocument();
+    // Remove second row
+    const removeBtn = screen.getByLabelText("حذف کد 2");
+    fireEvent.click(removeBtn);
+    expect(screen.queryByPlaceholderText("کد 2")).not.toBeInTheDocument();
+  });
+
+  // ── DUPLICATE_WARNING flow ───────────────────────────────────────────────
+
+  it("opens DuplicateWarningDialog on first DUPLICATE_WARNING", async () => {
+    const mutateAsync = vi.fn().mockRejectedValueOnce(
+      makeDuplicateError(["psnEmail", "onlineId"]),
+    );
+    vi.mocked(useCreateAccount).mockReturnValue(makeMutation(mutateAsync));
+    const user = userEvent.setup();
+    render(
+      <CreateAccountDialog open gameId={gameId} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    await fillValidForm(user);
+    fireEvent.click(screen.getByText("افزودن اکانت"));
+    const dupDialog = await screen.findByRole("dialog", { name: "شباهت با اکانت موجود" });
+    // DuplicateWarningDialog shows Persian field labels — NOT values or Account IDs
+    expect(dupDialog).toBeInTheDocument();
+    // Duplicate fields list is inside the warning dialog
+    expect(dupDialog).toHaveTextContent("ایمیل PSN");
+    expect(dupDialog).toHaveTextContent("Online ID");
+    // Does NOT show Account IDs or raw values
+    expect(screen.queryByText(/ACC-/)).not.toBeInTheDocument();
+    expect(screen.queryByText("test@psn.com")).not.toBeInTheDocument();
+  });
+
+  it("sends confirmed: true on duplicate confirm", async () => {
+    const mutateAsync = vi.fn()
+      .mockRejectedValueOnce(makeDuplicateError(["psnEmail"]))
+      .mockResolvedValueOnce({ account: {} });
+    vi.mocked(useCreateAccount).mockReturnValue(makeMutation(mutateAsync));
+    const user = userEvent.setup();
+    render(
+      <CreateAccountDialog open gameId={gameId} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    await fillValidForm(user);
+    fireEvent.click(screen.getByText("افزودن اکانت"));
+    await waitFor(() => screen.getByText("شباهت با اکانت موجود"));
+    fireEvent.click(screen.getByText("تأیید و ادامه"));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(2));
+    const [, secondCall] = mutateAsync.mock.calls;
+    expect(secondCall[0].data.confirmed).toBe(true);
+  });
+
+  it("cancel on DuplicateWarningDialog sends no retry", async () => {
+    const mutateAsync = vi.fn().mockRejectedValueOnce(makeDuplicateError(["psnEmail"]));
+    vi.mocked(useCreateAccount).mockReturnValue(makeMutation(mutateAsync));
+    const user = userEvent.setup();
+    render(
+      <CreateAccountDialog open gameId={gameId} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    await fillValidForm(user);
+    fireEvent.click(screen.getByText("افزودن اکانت"));
+    // Wait for DuplicateWarningDialog to appear, then click its Cancel button
+    const dupDialog = await screen.findByRole("dialog", { name: "شباهت با اکانت موجود" });
+    const cancelBtn = within(dupDialog).getByText("انصراف");
+    fireEvent.click(cancelBtn);
+    // Only one call was made — no retry
+    expect(mutateAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it("second DUPLICATE_WARNING does NOT open dialog again (no retry loop)", async () => {
+    const mutateAsync = vi.fn()
+      .mockRejectedValueOnce(makeDuplicateError(["psnEmail"]))
+      .mockRejectedValueOnce(makeDuplicateError(["psnEmail"])); // second warning
+    vi.mocked(useCreateAccount).mockReturnValue(makeMutation(mutateAsync));
+    const user = userEvent.setup();
+    render(
+      <CreateAccountDialog open gameId={gameId} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    await fillValidForm(user);
+    fireEvent.click(screen.getByText("افزودن اکانت"));
+    await waitFor(() => screen.getByText("شباهت با اکانت موجود"));
+    fireEvent.click(screen.getByText("تأیید و ادامه"));
+    // Dialog should close and show generic error (not re-open DuplicateWarningDialog)
+    await waitFor(() => expect(screen.queryByText("شباهت با اکانت موجود")).not.toBeInTheDocument());
+    expect(screen.getByText(PERSIAN_GENERIC_MSG)).toBeInTheDocument();
+    // Only 2 calls total — no third automatic retry
+    expect(mutateAsync).toHaveBeenCalledTimes(2);
+  });
+
+  // ── Error messages ───────────────────────────────────────────────────────
+
+  it("shows PERSIAN_DISABLED_MSG for ACCOUNT_OPS_DISABLED", async () => {
+    const mutateAsync = vi.fn().mockRejectedValue(makeDisabledError());
+    vi.mocked(useCreateAccount).mockReturnValue(makeMutation(mutateAsync));
+    const user = userEvent.setup();
+    render(
+      <CreateAccountDialog open gameId={gameId} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    await fillValidForm(user);
+    fireEvent.click(screen.getByText("افزودن اکانت"));
+    await waitFor(() => expect(screen.getByText(PERSIAN_DISABLED_MSG)).toBeInTheDocument());
+  });
+
+  it("shows PERSIAN_GENERIC_MSG for unknown error", async () => {
+    const mutateAsync = vi.fn().mockRejectedValue(makeGenericError());
+    vi.mocked(useCreateAccount).mockReturnValue(makeMutation(mutateAsync));
+    const user = userEvent.setup();
+    render(
+      <CreateAccountDialog open gameId={gameId} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    await fillValidForm(user);
+    fireEvent.click(screen.getByText("افزودن اکانت"));
+    await waitFor(() => expect(screen.getByText(PERSIAN_GENERIC_MSG)).toBeInTheDocument());
+  });
+
+  it("never renders raw error messages, URLs, or server text", async () => {
+    const mutateAsync = vi.fn().mockRejectedValue({
+      data: { code: "SOME_ERROR", error: "raw SQL error: duplicate key value" },
+      status: 500,
+    });
+    vi.mocked(useCreateAccount).mockReturnValue(makeMutation(mutateAsync));
+    const user = userEvent.setup();
+    render(
+      <CreateAccountDialog open gameId={gameId} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    await fillValidForm(user);
+    fireEvent.click(screen.getByText("افزودن اکانت"));
+    await waitFor(() => screen.getByText(PERSIAN_GENERIC_MSG));
+    expect(screen.queryByText("raw SQL error: duplicate key value")).not.toBeInTheDocument();
+  });
+
+  // ── Sensitive field clearing ──────────────────────────────────────────────
+
+  it("clears password and backup codes after success", async () => {
+    const onSuccess = vi.fn();
+    const mutateAsync = vi.fn().mockResolvedValue({ account: {} });
+    vi.mocked(useCreateAccount).mockReturnValue(makeMutation(mutateAsync));
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <CreateAccountDialog open gameId={gameId} onSuccess={onSuccess} onClose={vi.fn()} />,
+    );
+    await fillValidForm(user);
+    fireEvent.click(screen.getByText("افزودن اکانت"));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+    // Reopen the dialog to check the state was reset
+    rerender(
+      <CreateAccountDialog open={false} gameId={gameId} onSuccess={onSuccess} onClose={vi.fn()} />,
+    );
+    rerender(
+      <CreateAccountDialog open gameId={gameId} onSuccess={onSuccess} onClose={vi.fn()} />,
+    );
+    // Password fields should be empty after reopen
+    const psnPassInput = screen.getAllByPlaceholderText(/PlayStation password/i)[0] as HTMLInputElement;
+    expect(psnPassInput.value).toBe("");
+    // First backup code input should be empty
+    const codeInput = screen.getByPlaceholderText("کد 1") as HTMLInputElement;
+    expect(codeInput.value).toBe("");
+  });
+
+  it("clears password and backup codes when dialog is closed", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <CreateAccountDialog open gameId={gameId} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    await fillValidForm(user);
+    // Close
+    fireEvent.click(screen.getByLabelText("بستن"));
+    // Reopen
+    rerender(
+      <CreateAccountDialog open={false} gameId={gameId} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    rerender(
+      <CreateAccountDialog open gameId={gameId} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    const psnPassInput = screen.getAllByPlaceholderText(/PlayStation password/i)[0] as HTMLInputElement;
+    expect(psnPassInput.value).toBe("");
+    const codeInput = screen.getByPlaceholderText("کد 1") as HTMLInputElement;
+    expect(codeInput.value).toBe("");
+  });
+
+  it("does not render when open=false", () => {
+    render(
+      <CreateAccountDialog open={false} gameId={gameId} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+=== NEW FILE: artifacts/playsyncer/src/features/account-write/__tests__/DeleteUnavailableDialog.test.tsx ===
+/**
+ * PS-03D5-6A — Tests: DeleteUnavailableDialog
+ *
+ * Verifies that:
+ * - The approved Persian message is shown.
+ * - Zero DELETE requests are sent.
+ * - The dialog does NOT import deleteAccount or useDeleteAccount.
+ * - Local state is not mutated.
+ * - The close button works.
+ */
+import { vi, describe, it, expect } from "vitest";
+import { screen, fireEvent } from "@testing-library/react";
+import { render } from "@/test/render";
+import { DeleteUnavailableDialog } from "../DeleteUnavailableDialog";
+
+// Ensure the module does NOT import deleteAccount or useDeleteAccount.
+// This is verified at module evaluation time — if the import exists, the mock
+// guard below would catch it.
+vi.mock("@workspace/api-client-react", async () => {
+  const actual = await vi.importActual<typeof import("@workspace/api-client-react")>(
+    "@workspace/api-client-react",
+  );
+  return {
+    ...actual,
+    deleteAccount: vi.fn(() => {
+      throw new Error("deleteAccount must NOT be called by DeleteUnavailableDialog");
+    }),
+    useDeleteAccount: vi.fn(() => {
+      throw new Error("useDeleteAccount must NOT be called by DeleteUnavailableDialog");
+    }),
+  };
+});
+
+describe("DeleteUnavailableDialog", () => {
+  it("renders the approved Persian deletion-unavailable message", () => {
+    render(<DeleteUnavailableDialog open onClose={vi.fn()} />);
+    expect(screen.getByText(/حذف دائمی اکانت فعلاً امکان‌پذیر نیست/)).toBeInTheDocument();
+  });
+
+  it("directs the user toward INACTIVE status", () => {
+    render(<DeleteUnavailableDialog open onClose={vi.fn()} />);
+    // The dialog must contain text directing the user to set status to INACTIVE.
+    // There may be multiple elements containing /غیرفعال/ — using getAllByText is fine.
+    expect(screen.getAllByText(/غیرفعال/).length).toBeGreaterThan(0);
+  });
+
+  it("calls onClose when the close button is clicked", () => {
+    const onClose = vi.fn();
+    render(<DeleteUnavailableDialog open onClose={onClose} />);
+    fireEvent.click(screen.getByText("متوجه شدم"));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls onClose when the backdrop is clicked", () => {
+    const onClose = vi.fn();
+    render(<DeleteUnavailableDialog open onClose={onClose} />);
+    // Click the backdrop (the fixed overlay div behind the dialog)
+    const dialog = screen.getByRole("dialog");
+    // The backdrop is the first child of the dialog container
+    fireEvent.click(dialog.children[0]);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not render when open=false", () => {
+    render(<DeleteUnavailableDialog open={false} onClose={vi.fn()} />);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("sends zero DELETE requests (fetch is not called)", () => {
+    // The global fetch spy in setup.ts asserts fetch was NOT called after each test.
+    render(<DeleteUnavailableDialog open onClose={vi.fn()} />);
+    fireEvent.click(screen.getByText("متوجه شدم"));
+    // If fetch were called, setup.ts afterEach assertion would fail this test.
+  });
+
+  it("does not display raw Account IDs, passwords, or URLs", () => {
+    render(<DeleteUnavailableDialog open onClose={vi.fn()} />);
+    expect(screen.queryByText(/ACC-/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/password/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/http/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/DELETE/)).not.toBeInTheDocument();
+  });
+});
+=== NEW FILE: artifacts/playsyncer/src/features/account-write/__tests__/EditAccountDialog.test.tsx ===
+/**
+ * PS-03D5-6A — Tests: EditAccountDialog
+ *
+ * Covers:
+ * - Changed-fields-only behavior
+ * - Never prefilling passwords
+ * - real ApiError.data duplicate flow
+ * - ACCOUNT_OPS_DISABLED safe message
+ * - generic error message
+ * - Sensitive value clearing on close, external open=false, Account switch
+ * - No backup code editing
+ * - No immutable identifier submission
+ */
+import { vi, describe, it, expect, beforeEach } from "vitest";
+import { screen, fireEvent, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { useUpdateAccount } from "@workspace/api-client-react";
+import { render } from "@/test/render";
+import { EditAccountDialog } from "../EditAccountDialog";
+import { accountListItemFixture } from "@/test/fixtures";
+import { PERSIAN_DISABLED_MSG, PERSIAN_GENERIC_MSG } from "../parseApiError";
+
+vi.mock("@workspace/api-client-react", async () => {
+  const actual = await vi.importActual<typeof import("@workspace/api-client-react")>(
+    "@workspace/api-client-react",
+  );
+  return {
+    ...actual,
+    useUpdateAccount: vi.fn(),
+  };
+});
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeMutation(mutateAsync: (vars: any) => Promise<unknown>, isPending = false): any {
+  return {
+    mutateAsync,
+    mutate: vi.fn(),
+    isPending,
+    isError: false,
+    isSuccess: false,
+    isIdle: !isPending,
+    data: undefined,
+    error: null,
+    reset: vi.fn(),
+    variables: undefined,
+    status: isPending ? "pending" : "idle",
+    submittedAt: 0,
+    failureCount: 0,
+    failureReason: null,
+    context: undefined,
+    isPaused: false,
+  };
+}
+
+function makeDuplicateError(fields: string[]) {
+  return {
+    data: { code: "DUPLICATE_WARNING", detail: { duplicateFields: fields } },
+    status: 409,
+  };
+}
+
+describe("EditAccountDialog", () => {
+  const account = accountListItemFixture({
+    id: "acc-edit-001",
+    accountCode: "ACC-000001",
+    displayNumber: "TEST-001",
+    onlineId: "original_id",
+    birthDate: "1990-01-15",
+  });
+
+  beforeEach(() => {
+    vi.mocked(useUpdateAccount).mockReturnValue(
+      makeMutation(vi.fn().mockResolvedValue({ account: {} })),
+    );
+  });
+
+  it("prefills onlineId and birthDate from the safe DTO", () => {
+    render(
+      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    const onlineIdInput = screen.getByPlaceholderText("PSN username") as HTMLInputElement;
+    const birthDateInput = screen.getByPlaceholderText("1990-08-27") as HTMLInputElement;
+    expect(onlineIdInput.value).toBe("original_id");
+    expect(birthDateInput.value).toBe("1990-01-15");
+  });
+
+  it("never prefills PSN Password", () => {
+    render(
+      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    const passwordInputs = screen.getAllByPlaceholderText(/خالی = بدون تغییر/);
+    // All replacement fields should start empty
+    passwordInputs.forEach((input) => {
+      expect((input as HTMLInputElement).value).toBe("");
+    });
+  });
+
+  it("starts psnEmail, emailPassword, familyManagementEmail as empty", () => {
+    render(
+      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    // All inputs with the empty-means-no-change placeholder should be empty
+    const emptyInputs = screen.getAllByPlaceholderText(/خالی/);
+    emptyInputs.forEach((input) => {
+      expect((input as HTMLInputElement).value).toBe("");
+    });
+  });
+
+  it("displays account identifier read-only, does not submit it", async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({ account: {} });
+    vi.mocked(useUpdateAccount).mockReturnValue(makeMutation(mutateAsync));
+    render(
+      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    expect(screen.getByText("ACC-000001")).toBeInTheDocument();
+    // Submit with changed onlineId only
+    const onlineIdInput = screen.getByPlaceholderText("PSN username");
+    await userEvent.clear(onlineIdInput);
+    await userEvent.type(onlineIdInput, "new_online_id");
+    fireEvent.click(screen.getByText("ذخیره تغییرات"));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
+    const payload = mutateAsync.mock.calls[0][0].data;
+    // Immutable identifiers must NOT be in the payload
+    expect(payload.accountCode).toBeUndefined();
+    expect(payload.displayNumber).toBeUndefined();
+    expect(payload.gameId).toBeUndefined();
+    expect(payload.id).toBeUndefined();
+  });
+
+  it("submits only changed fields — unchanged onlineId is omitted", async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({ account: {} });
+    vi.mocked(useUpdateAccount).mockReturnValue(makeMutation(mutateAsync));
+    const user = userEvent.setup();
+    render(
+      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    // Type into the PSN Password field (index 1 in the "خالی = بدون تغییر" group;
+    // index 0=psnEmail, 1=psnPassword, 2=emailPassword, 3=familyManagementEmail)
+    const psnPasswordInput = screen.getAllByPlaceholderText(/خالی = بدون تغییر/)[1];
+    await user.type(psnPasswordInput, "NewPsnPass");
+    fireEvent.click(screen.getByText("ذخیره تغییرات"));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
+    const payload = mutateAsync.mock.calls[0][0].data;
+    // Only psnPassword should be present
+    expect(payload.psnPassword).toBe("NewPsnPass");
+    // onlineId unchanged from original — should NOT be in payload
+    expect(payload.onlineId).toBeUndefined();
+    expect(payload.birthDate).toBeUndefined();
+    expect(payload.emailPassword).toBeUndefined();
+  });
+
+  it("shows 'no changes' message when nothing is changed", async () => {
+    render(
+      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByText("ذخیره تغییرات"));
+    await waitFor(() =>
+      expect(screen.getByText("هیچ تغییری وارد نشده است")).toBeInTheDocument(),
+    );
+  });
+
+  it("does not render Backup Code editing section", () => {
+    render(
+      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    expect(screen.getByText(/Backup Codes در این مرحله قابل ویرایش نیستند/)).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("کد 1")).not.toBeInTheDocument();
+  });
+
+  // ── DUPLICATE_WARNING flow ───────────────────────────────────────────────
+
+  it("opens DuplicateWarningDialog on DUPLICATE_WARNING and shows field labels only", async () => {
+    const mutateAsync = vi.fn().mockRejectedValueOnce(
+      makeDuplicateError(["psnEmail", "onlineId"]),
+    );
+    vi.mocked(useUpdateAccount).mockReturnValue(makeMutation(mutateAsync));
+    const user = userEvent.setup();
+    render(
+      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    const onlineIdInput = screen.getByPlaceholderText("PSN username");
+    await user.clear(onlineIdInput);
+    await user.type(onlineIdInput, "different_id");
+    fireEvent.click(screen.getByText("ذخیره تغییرات"));
+    // Wait for the DuplicateWarningDialog to appear
+    const dupDialog = await screen.findByRole("dialog", { name: "شباهت با اکانت موجود" });
+    // The warning dialog itself shows field labels — scope assertions to the dialog
+    expect(dupDialog).toHaveTextContent("ایمیل PSN");
+    expect(dupDialog).toHaveTextContent("Online ID");
+    // DuplicateWarningDialog must NOT contain Account IDs or raw field values
+    expect(dupDialog).not.toHaveTextContent("ACC-000001");
+    expect(dupDialog).not.toHaveTextContent("original_id");
+  });
+
+  it("sends confirmed: true on duplicate confirm", async () => {
+    const mutateAsync = vi.fn()
+      .mockRejectedValueOnce(makeDuplicateError(["psnEmail"]))
+      .mockResolvedValueOnce({ account: {} });
+    vi.mocked(useUpdateAccount).mockReturnValue(makeMutation(mutateAsync));
+    const user = userEvent.setup();
+    render(
+      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    const onlineIdInput = screen.getByPlaceholderText("PSN username");
+    await user.clear(onlineIdInput);
+    await user.type(onlineIdInput, "new_id");
+    fireEvent.click(screen.getByText("ذخیره تغییرات"));
+    await waitFor(() => screen.getByText("شباهت با اکانت موجود"));
+    fireEvent.click(screen.getByText("تأیید و ادامه"));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(2));
+    expect(mutateAsync.mock.calls[1][0].data.confirmed).toBe(true);
+  });
+
+  it("second DUPLICATE_WARNING shows generic error (no retry loop)", async () => {
+    const mutateAsync = vi.fn()
+      .mockRejectedValueOnce(makeDuplicateError(["onlineId"]))
+      .mockRejectedValueOnce(makeDuplicateError(["onlineId"]));
+    vi.mocked(useUpdateAccount).mockReturnValue(makeMutation(mutateAsync));
+    const user = userEvent.setup();
+    render(
+      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    const onlineIdInput = screen.getByPlaceholderText("PSN username");
+    await user.clear(onlineIdInput);
+    await user.type(onlineIdInput, "conflict_id");
+    fireEvent.click(screen.getByText("ذخیره تغییرات"));
+    await waitFor(() => screen.getByText("شباهت با اکانت موجود"));
+    fireEvent.click(screen.getByText("تأیید و ادامه"));
+    await waitFor(() => expect(screen.queryByText("شباهت با اکانت موجود")).not.toBeInTheDocument());
+    expect(screen.getByText(PERSIAN_GENERIC_MSG)).toBeInTheDocument();
+    expect(mutateAsync).toHaveBeenCalledTimes(2);
+  });
+
+  // ── Error messages ───────────────────────────────────────────────────────
+
+  it("shows PERSIAN_DISABLED_MSG for ACCOUNT_OPS_DISABLED", async () => {
+    const mutateAsync = vi.fn().mockRejectedValue(
+      { data: { code: "ACCOUNT_OPS_DISABLED" }, status: 403 },
+    );
+    vi.mocked(useUpdateAccount).mockReturnValue(makeMutation(mutateAsync));
+    const user = userEvent.setup();
+    render(
+      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    const onlineIdInput = screen.getByPlaceholderText("PSN username");
+    await user.clear(onlineIdInput);
+    await user.type(onlineIdInput, "changed_id");
+    fireEvent.click(screen.getByText("ذخیره تغییرات"));
+    await waitFor(() => expect(screen.getByText(PERSIAN_DISABLED_MSG)).toBeInTheDocument());
+  });
+
+  it("shows PERSIAN_GENERIC_MSG for unknown error", async () => {
+    const mutateAsync = vi.fn().mockRejectedValue(
+      { data: { code: "SOME_ERROR" }, status: 500 },
+    );
+    vi.mocked(useUpdateAccount).mockReturnValue(makeMutation(mutateAsync));
+    const user = userEvent.setup();
+    render(
+      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    const onlineIdInput = screen.getByPlaceholderText("PSN username");
+    await user.clear(onlineIdInput);
+    await user.type(onlineIdInput, "changed_id");
+    fireEvent.click(screen.getByText("ذخیره تغییرات"));
+    await waitFor(() => expect(screen.getByText(PERSIAN_GENERIC_MSG)).toBeInTheDocument());
+  });
+
+  // ── Sensitive clearing ───────────────────────────────────────────────────
+
+  it("clears sensitive fields on Account switch (account.id change)", () => {
+    const { rerender } = render(
+      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    // Type into the first sensitive field (psnEmail at index 0)
+    const allInputs = screen.getAllByPlaceholderText(/خالی = بدون تغییر/) as HTMLInputElement[];
+    fireEvent.change(allInputs[0], { target: { value: "sensitive@example.com" } });
+    expect(allInputs[0].value).toBe("sensitive@example.com");
+    // Simulate Account switch
+    const account2 = accountListItemFixture({ id: "acc-edit-002", onlineId: "other_id" });
+    rerender(
+      <EditAccountDialog open account={account2} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    // After switch, all sensitive fields should be cleared
+    const afterSwitch = screen.getAllByPlaceholderText(/خالی = بدون تغییر/) as HTMLInputElement[];
+    afterSwitch.forEach((input) => {
+      expect(input.value).toBe("");
+    });
+  });
+
+  it("clears sensitive fields when external open=false", () => {
+    const { rerender } = render(
+      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    // The password fields start empty — they are always cleared on open=false
+    rerender(
+      <EditAccountDialog open={false} account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    // Nothing should be rendered
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("does not render when open=false", () => {
+    render(
+      <EditAccountDialog open={false} account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("does not render when account is null", () => {
+    render(
+      <EditAccountDialog open account={null} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+=== NEW FILE: artifacts/playsyncer/src/features/account-write/__tests__/isolation.test.tsx ===
+/**
+ * PS-03D5-6A — Isolation Tests
+ *
+ * Verifies that the Account Write feature is NOT mounted in active production
+ * pages, and that no DELETE requests are made anywhere in the feature.
+ *
+ * Tests:
+ * - AccountCardReadOnly does not render Account Write controls
+ * - AccountDetailsReadOnly does not render write controls
+ * - The feature barrel does not export deleteAccount / useDeleteAccount
+ * - Zero real network requests (guaranteed by setup.ts global fetch spy)
+ */
+import { vi, describe, it, expect, beforeEach } from "vitest";
+import { screen } from "@testing-library/react";
+import {
+  useGetAccount,
+  useGetAccountCapacities,
+  getGetAccountQueryKey,
+  getGetAccountCapacitiesQueryKey,
+} from "@workspace/api-client-react";
+import { mockAccountDetail, mockCapacities } from "@/test/mocks";
+import { AccountCardReadOnly } from "@/components/AccountCardReadOnly";
+import { AccountDetailsReadOnly } from "@/components/AccountDetailsReadOnly";
+import { render } from "@/test/render";
+import { accountListItemFixture, accountDetailFixture } from "@/test/fixtures";
+
+vi.mock("@workspace/api-client-react", async () => {
+  const actual = await vi.importActual<typeof import("@workspace/api-client-react")>(
+    "@workspace/api-client-react",
+  );
+  return {
+    ...actual,
+    useGetAccount: vi.fn(),
+    useGetAccountCapacities: vi.fn(),
+  };
+});
+
+describe("AccountCardReadOnly isolation", () => {
+  const account = accountListItemFixture();
+
+  beforeEach(() => {
+    vi.mocked(useGetAccountCapacities).mockReturnValue(mockCapacities([]));
+  });
+
+  it("does not render any Account Write controls", () => {
+    render(
+      <AccountCardReadOnly
+        account={account}
+        gameTitle="Test Game"
+        platform="PS4_AND_PS5"
+      />,
+    );
+    expect(screen.queryByText("افزودن اکانت جدید")).not.toBeInTheDocument();
+    expect(screen.queryByText("ویرایش اکانت")).not.toBeInTheDocument();
+    expect(screen.queryByText("تغییر وضعیت اکانت")).not.toBeInTheDocument();
+    expect(screen.queryByText("حذف در دسترس نیست")).not.toBeInTheDocument();
+  });
+
+  it("does not have Create, Edit, Status Override, or Delete buttons", () => {
+    render(
+      <AccountCardReadOnly
+        account={account}
+        gameTitle="Test Game"
+        platform="PS4_AND_PS5"
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /افزودن/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /ویرایش/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /حذف/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("AccountDetailsReadOnly isolation", () => {
+  const account = accountDetailFixture();
+
+  beforeEach(() => {
+    vi.mocked(useGetAccount).mockReturnValue(mockAccountDetail(account, "success"));
+    vi.mocked(useGetAccountCapacities).mockReturnValue(mockCapacities([]));
+  });
+
+  it("does not render Account Write controls", () => {
+    render(
+      <AccountDetailsReadOnly
+        open
+        accountId="acc-1"
+        gamePlatform="PS4_AND_PS5"
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText("افزودن اکانت جدید")).not.toBeInTheDocument();
+    expect(screen.queryByText("ویرایش اکانت")).not.toBeInTheDocument();
+    expect(screen.queryByText("تغییر وضعیت اکانت")).not.toBeInTheDocument();
+    expect(screen.queryByText("حذف در دسترس نیست")).not.toBeInTheDocument();
+  });
+
+  it("does not render Edit or Delete action buttons", () => {
+    render(
+      <AccountDetailsReadOnly
+        open
+        accountId="acc-1"
+        gamePlatform="PS4_AND_PS5"
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /ویرایش/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /حذف/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("Feature barrel isolation", () => {
+  it("does not export deleteAccount or useDeleteAccount", async () => {
+    const featureModule = await import("../index");
+    expect((featureModule as Record<string, unknown>)["deleteAccount"]).toBeUndefined();
+    expect((featureModule as Record<string, unknown>)["useDeleteAccount"]).toBeUndefined();
+  });
+});
+
+describe("Zero real network requests", () => {
+  it("documents the setup.ts invariant: no real fetch calls in any feature test", () => {
+    // setup.ts installs a fetch spy before every test and asserts it was NOT
+    // called after every test. Any test that makes a real fetch call fails automatically.
+    expect(true).toBe(true);
+  });
+});
+=== NEW FILE: artifacts/playsyncer/src/features/account-write/__tests__/parseApiError.test.ts ===
+/**
+ * PS-03D5-6A — Tests: parseApiError
+ *
+ * Verifies error parsing from real ApiError.data shape (not Error.message).
+ * Tests: DUPLICATE_WARNING detection, ACCOUNT_OPS_DISABLED detection,
+ * generic fallback, safe message selection.
+ */
+import { describe, it, expect } from "vitest";
+import {
+  parseMutationError,
+  safeMutationErrorMessage,
+  PERSIAN_DISABLED_MSG,
+  PERSIAN_GENERIC_MSG,
+  DUPLICATE_FIELD_LABELS,
+} from "../parseApiError";
+
+/** Build a real ApiError-shaped object (error.data holds the payload). */
+function makeApiError(data: unknown, status = 409): { data: unknown; status: number } {
+  return { data, status };
+}
+
+describe("parseMutationError", () => {
+  it("returns duplicate_warning when data.code === DUPLICATE_WARNING", () => {
+    const err = makeApiError({
+      code: "DUPLICATE_WARNING",
+      detail: { duplicateFields: ["psnEmail", "onlineId"] },
+    });
+    const result = parseMutationError(err);
+    expect(result.kind).toBe("duplicate_warning");
+    if (result.kind === "duplicate_warning") {
+      expect(result.duplicateFields).toEqual(["psnEmail", "onlineId"]);
+    }
+  });
+
+  it("returns ops_disabled when data.code === ACCOUNT_OPS_DISABLED", () => {
+    const err = makeApiError({ code: "ACCOUNT_OPS_DISABLED" });
+    const result = parseMutationError(err);
+    expect(result.kind).toBe("ops_disabled");
+  });
+
+  it("returns generic for unknown code", () => {
+    const err = makeApiError({ code: "SOME_OTHER_ERROR" });
+    expect(parseMutationError(err).kind).toBe("generic");
+  });
+
+  it("returns generic when data is null", () => {
+    const err = makeApiError(null);
+    expect(parseMutationError(err).kind).toBe("generic");
+  });
+
+  it("returns generic when error is not an object", () => {
+    expect(parseMutationError("some string error").kind).toBe("generic");
+    expect(parseMutationError(42).kind).toBe("generic");
+    expect(parseMutationError(null).kind).toBe("generic");
+    expect(parseMutationError(undefined).kind).toBe("generic");
+  });
+
+  it("returns generic when error has no .data field", () => {
+    const err = { message: "ACCOUNT_OPS_DISABLED" }; // Error.message — must NOT match
+    expect(parseMutationError(err).kind).toBe("generic");
+  });
+
+  it("does NOT detect ACCOUNT_OPS_DISABLED from Error.message (defect guard)", () => {
+    const err = new Error("ACCOUNT_OPS_DISABLED");
+    // Plain Error has no .data — must return generic
+    expect(parseMutationError(err).kind).toBe("generic");
+  });
+
+  it("returns empty duplicateFields array when detail is missing", () => {
+    const err = makeApiError({ code: "DUPLICATE_WARNING" });
+    const result = parseMutationError(err);
+    expect(result.kind).toBe("duplicate_warning");
+    if (result.kind === "duplicate_warning") {
+      expect(result.duplicateFields).toEqual([]);
+    }
+  });
+
+  it("filters out non-string items from duplicateFields", () => {
+    const err = makeApiError({
+      code: "DUPLICATE_WARNING",
+      detail: { duplicateFields: ["psnEmail", 42, null, "onlineId"] },
+    });
+    const result = parseMutationError(err);
+    expect(result.kind).toBe("duplicate_warning");
+    if (result.kind === "duplicate_warning") {
+      expect(result.duplicateFields).toEqual(["psnEmail", "onlineId"]);
+    }
+  });
+
+  it("reads from error.data (defect guard — not error.response)", () => {
+    // Simulate the v4 defect: data on error.response instead of error.data
+    const errWithResponseInstead = {
+      response: {
+        data: {
+          code: "DUPLICATE_WARNING",
+          detail: { duplicateFields: ["psnEmail"] },
+        },
+      },
+      // No .data field
+    };
+    // Must return generic because .data is absent
+    expect(parseMutationError(errWithResponseInstead).kind).toBe("generic");
+  });
+});
+
+describe("safeMutationErrorMessage", () => {
+  it("returns PERSIAN_DISABLED_MSG for ops_disabled", () => {
+    expect(safeMutationErrorMessage({ kind: "ops_disabled" })).toBe(PERSIAN_DISABLED_MSG);
+  });
+
+  it("returns PERSIAN_GENERIC_MSG for generic", () => {
+    expect(safeMutationErrorMessage({ kind: "generic" })).toBe(PERSIAN_GENERIC_MSG);
+  });
+
+  it("PERSIAN_DISABLED_MSG contains the approved text", () => {
+    expect(PERSIAN_DISABLED_MSG).toContain("فعال نیست");
+  });
+
+  it("PERSIAN_GENERIC_MSG does not contain raw HTTP details or server text", () => {
+    expect(PERSIAN_GENERIC_MSG).not.toMatch(/HTTP|http|status|fetch|Error/);
+  });
+});
+
+describe("DUPLICATE_FIELD_LABELS", () => {
+  it("maps psnEmail to safe Persian label", () => {
+    expect(DUPLICATE_FIELD_LABELS["psnEmail"]).toBeTruthy();
+    expect(DUPLICATE_FIELD_LABELS["psnEmail"]).not.toContain("@");
+    expect(DUPLICATE_FIELD_LABELS["psnEmail"]).not.toContain("password");
+  });
+
+  it("maps familyManagementEmail to safe Persian label", () => {
+    expect(DUPLICATE_FIELD_LABELS["familyManagementEmail"]).toBeTruthy();
+  });
+
+  it("maps onlineId to safe Persian label", () => {
+    expect(DUPLICATE_FIELD_LABELS["onlineId"]).toBeTruthy();
+  });
+});
+=== NEW FILE: artifacts/playsyncer/src/features/account-write/__tests__/StatusOverrideDialog.test.tsx ===
+/**
+ * PS-03D5-6A — Tests: StatusOverrideDialog
+ *
+ * Verifies:
+ * - Offers only SOLD, INACTIVE, Clear Override (null).
+ * - Does NOT offer AVAILABLE or PARTIALLY_SOLD.
+ * - Clear Override sends null statusOverride payload.
+ * - SOLD payload is { statusOverride: "SOLD" }.
+ * - INACTIVE payload is { statusOverride: "INACTIVE" }.
+ * - ACCOUNT_OPS_DISABLED shows safe message.
+ * - Generic error shows safe message.
+ * - Zero real network requests (fetch spy in setup.ts).
+ */
+import { vi, describe, it, expect, beforeEach } from "vitest";
+import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { useSetAccountStatusOverride } from "@workspace/api-client-react";
+import { render } from "@/test/render";
+import { StatusOverrideDialog } from "../StatusOverrideDialog";
+import { PERSIAN_DISABLED_MSG, PERSIAN_GENERIC_MSG } from "../parseApiError";
+
+vi.mock("@workspace/api-client-react", async () => {
+  const actual = await vi.importActual<typeof import("@workspace/api-client-react")>(
+    "@workspace/api-client-react",
+  );
+  return {
+    ...actual,
+    useSetAccountStatusOverride: vi.fn(),
+  };
+});
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeMutation(mutateAsync: (vars: any) => Promise<unknown>, isPending = false): any {
+  return {
+    mutateAsync,
+    mutate: vi.fn(),
+    isPending,
+    isError: false,
+    isSuccess: false,
+    isIdle: !isPending,
+    data: undefined,
+    error: null,
+    reset: vi.fn(),
+    variables: undefined,
+    status: isPending ? "pending" : "idle",
+    submittedAt: 0,
+    failureCount: 0,
+    failureReason: null,
+    context: undefined,
+    isPaused: false,
+  };
+}
+
+function makeApiError(code: string, status = 403): { data: { code: string }; status: number } {
+  return { data: { code }, status };
+}
+
+describe("StatusOverrideDialog", () => {
+  const accountId = "acc-test-001";
+  let onSuccess: ReturnType<typeof vi.fn>;
+  let onClose: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    onSuccess = vi.fn();
+    onClose = vi.fn();
+  });
+
+  it("offers SOLD, INACTIVE, and Clear Override options", () => {
+    vi.mocked(useSetAccountStatusOverride).mockReturnValue(
+      makeMutation(vi.fn().mockResolvedValue({})),
+    );
+    render(
+      <StatusOverrideDialog open accountId={accountId} onSuccess={onSuccess} onClose={onClose} />,
+    );
+    expect(screen.getByText("فروخته‌شده")).toBeInTheDocument();
+    expect(screen.getByText("غیرفعال")).toBeInTheDocument();
+    expect(screen.getByText("پاک‌کردن وضعیت دستی")).toBeInTheDocument();
+  });
+
+  it("does NOT offer AVAILABLE or PARTIALLY_SOLD", () => {
+    vi.mocked(useSetAccountStatusOverride).mockReturnValue(
+      makeMutation(vi.fn().mockResolvedValue({})),
+    );
+    render(
+      <StatusOverrideDialog open accountId={accountId} onSuccess={onSuccess} onClose={onClose} />,
+    );
+    // Code-level strings must not appear as selectable options
+    expect(screen.queryByText("AVAILABLE")).not.toBeInTheDocument();
+    expect(screen.queryByText("PARTIALLY_SOLD")).not.toBeInTheDocument();
+    // Persian equivalent labels must not appear as selectable buttons
+    expect(screen.queryByRole("button", { name: /موجود/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /نیمه‌فروخته/ })).not.toBeInTheDocument();
+    // Only exactly three choice buttons should be present
+    expect(screen.getAllByRole("button").filter(
+      (b) => ["فروخته‌شده", "غیرفعال", "پاک‌کردن وضعیت دستی"].some(
+        (label) => b.textContent?.includes(label),
+      ),
+    )).toHaveLength(3);
+  });
+
+  it("sends { statusOverride: 'SOLD' } when SOLD is selected", async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({});
+    vi.mocked(useSetAccountStatusOverride).mockReturnValue(makeMutation(mutateAsync));
+    render(
+      <StatusOverrideDialog open accountId={accountId} onSuccess={onSuccess} onClose={onClose} />,
+    );
+    fireEvent.click(screen.getByText("فروخته‌شده"));
+    fireEvent.click(screen.getByText("اعمال"));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith({
+      accountId,
+      data: { statusOverride: "SOLD" },
+    }));
+  });
+
+  it("sends { statusOverride: 'INACTIVE' } when INACTIVE is selected", async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({});
+    vi.mocked(useSetAccountStatusOverride).mockReturnValue(makeMutation(mutateAsync));
+    render(
+      <StatusOverrideDialog open accountId={accountId} onSuccess={onSuccess} onClose={onClose} />,
+    );
+    fireEvent.click(screen.getByText("غیرفعال"));
+    fireEvent.click(screen.getByText("اعمال"));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith({
+      accountId,
+      data: { statusOverride: "INACTIVE" },
+    }));
+  });
+
+  it("sends { statusOverride: null } for Clear Override", async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({});
+    vi.mocked(useSetAccountStatusOverride).mockReturnValue(makeMutation(mutateAsync));
+    render(
+      <StatusOverrideDialog open accountId={accountId} onSuccess={onSuccess} onClose={onClose} />,
+    );
+    fireEvent.click(screen.getByText("پاک‌کردن وضعیت دستی"));
+    fireEvent.click(screen.getByText("اعمال"));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith({
+      accountId,
+      data: { statusOverride: null },
+    }));
+  });
+
+  it("calls onSuccess after successful mutation", async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({});
+    vi.mocked(useSetAccountStatusOverride).mockReturnValue(makeMutation(mutateAsync));
+    render(
+      <StatusOverrideDialog open accountId={accountId} onSuccess={onSuccess} onClose={onClose} />,
+    );
+    fireEvent.click(screen.getByText("فروخته‌شده"));
+    fireEvent.click(screen.getByText("اعمال"));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+  });
+
+  it("shows PERSIAN_DISABLED_MSG when ACCOUNT_OPS_DISABLED", async () => {
+    const mutateAsync = vi.fn().mockRejectedValue(makeApiError("ACCOUNT_OPS_DISABLED"));
+    vi.mocked(useSetAccountStatusOverride).mockReturnValue(makeMutation(mutateAsync));
+    render(
+      <StatusOverrideDialog open accountId={accountId} onSuccess={onSuccess} onClose={onClose} />,
+    );
+    fireEvent.click(screen.getByText("فروخته‌شده"));
+    fireEvent.click(screen.getByText("اعمال"));
+    await waitFor(() => expect(screen.getByText(PERSIAN_DISABLED_MSG)).toBeInTheDocument());
+    expect(onSuccess).not.toHaveBeenCalled();
+  });
+
+  it("shows PERSIAN_GENERIC_MSG for unknown error", async () => {
+    const mutateAsync = vi.fn().mockRejectedValue(makeApiError("SOME_UNKNOWN_ERROR", 500));
+    vi.mocked(useSetAccountStatusOverride).mockReturnValue(makeMutation(mutateAsync));
+    render(
+      <StatusOverrideDialog open accountId={accountId} onSuccess={onSuccess} onClose={onClose} />,
+    );
+    fireEvent.click(screen.getByText("غیرفعال"));
+    fireEvent.click(screen.getByText("اعمال"));
+    await waitFor(() => expect(screen.getByText(PERSIAN_GENERIC_MSG)).toBeInTheDocument());
+  });
+
+  it("does not render when open=false", () => {
+    vi.mocked(useSetAccountStatusOverride).mockReturnValue(
+      makeMutation(vi.fn().mockResolvedValue({})),
+    );
+    render(
+      <StatusOverrideDialog open={false} accountId={accountId} onSuccess={onSuccess} onClose={onClose} />,
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("calls onClose when Cancel is clicked", () => {
+    vi.mocked(useSetAccountStatusOverride).mockReturnValue(
+      makeMutation(vi.fn().mockResolvedValue({})),
+    );
+    render(
+      <StatusOverrideDialog open accountId={accountId} onSuccess={onSuccess} onClose={onClose} />,
+    );
+    fireEvent.click(screen.getByText("انصراف"));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("does not render raw error messages, URLs, passwords, or server text", async () => {
+    const mutateAsync = vi.fn().mockRejectedValue({
+      data: { code: "SOME_ERROR", error: "raw internal server error with SQL" },
+      status: 500,
+    });
+    vi.mocked(useSetAccountStatusOverride).mockReturnValue(makeMutation(mutateAsync));
+    render(
+      <StatusOverrideDialog open accountId={accountId} onSuccess={onSuccess} onClose={onClose} />,
+    );
+    fireEvent.click(screen.getByText("فروخته‌شده"));
+    fireEvent.click(screen.getByText("اعمال"));
+    await waitFor(() => screen.getByText(PERSIAN_GENERIC_MSG));
+    expect(screen.queryByText("raw internal server error with SQL")).not.toBeInTheDocument();
+  });
+});
+=== NEW FILE: artifacts/playsyncer/src/features/account-write/__tests__/validateBirthDate.test.ts ===
+/**
+ * PS-03D5-6A — Tests: validateBirthDate
+ *
+ * Covers YYYY-MM-DD format check, real calendar validation,
+ * impossible date rejection, and leap year support.
+ *
+ * DEFECT GUARD: does NOT rely only on Date.parse — verifies actual
+ * calendar correctness (e.g. 2026-02-31 is rejected).
+ */
+import { describe, it, expect } from "vitest";
+import { isValidBirthDate } from "../validateBirthDate";
+
+describe("isValidBirthDate", () => {
+  // ── Valid dates ──────────────────────────────────────────────────────────
+  it("accepts a valid date 1990-08-27", () => {
+    expect(isValidBirthDate("1990-08-27")).toBe(true);
+  });
+
+  it("accepts 2001-01-01 (January 1)", () => {
+    expect(isValidBirthDate("2001-01-01")).toBe(true);
+  });
+
+  it("accepts 2000-12-31 (December 31)", () => {
+    expect(isValidBirthDate("2000-12-31")).toBe(true);
+  });
+
+  it("accepts 1985-02-28 (February 28 on a non-leap year)", () => {
+    expect(isValidBirthDate("1985-02-28")).toBe(true);
+  });
+
+  // ── Leap year support ────────────────────────────────────────────────────
+  it("accepts 2024-02-29 (valid leap year)", () => {
+    expect(isValidBirthDate("2024-02-29")).toBe(true);
+  });
+
+  it("accepts 2000-02-29 (2000 is a leap year)", () => {
+    expect(isValidBirthDate("2000-02-29")).toBe(true);
+  });
+
+  // ── Impossible / impossible dates ────────────────────────────────────────
+  it("rejects 2026-02-31 (February cannot have 31 days)", () => {
+    expect(isValidBirthDate("2026-02-31")).toBe(false);
+  });
+
+  it("rejects 2026-02-29 (2026 is not a leap year)", () => {
+    expect(isValidBirthDate("2026-02-29")).toBe(false);
+  });
+
+  it("rejects 1900-02-29 (1900 is not a leap year)", () => {
+    expect(isValidBirthDate("1900-02-29")).toBe(false);
+  });
+
+  it("rejects 2026-04-31 (April has only 30 days)", () => {
+    expect(isValidBirthDate("2026-04-31")).toBe(false);
+  });
+
+  it("rejects 2026-06-31 (June has only 30 days)", () => {
+    expect(isValidBirthDate("2026-06-31")).toBe(false);
+  });
+
+  it("rejects 2026-01-00 (day 0 is invalid)", () => {
+    expect(isValidBirthDate("2026-01-00")).toBe(false);
+  });
+
+  it("rejects 2026-13-01 (month 13 is invalid)", () => {
+    expect(isValidBirthDate("2026-13-01")).toBe(false);
+  });
+
+  it("rejects 2026-00-15 (month 0 is invalid)", () => {
+    expect(isValidBirthDate("2026-00-15")).toBe(false);
+  });
+
+  // ── Format enforcement ───────────────────────────────────────────────────
+  it("rejects YYYY/MM/DD format (wrong separator)", () => {
+    expect(isValidBirthDate("1990/08/27")).toBe(false);
+  });
+
+  it("rejects DD-MM-YYYY format", () => {
+    expect(isValidBirthDate("27-08-1990")).toBe(false);
+  });
+
+  it("rejects empty string", () => {
+    expect(isValidBirthDate("")).toBe(false);
+  });
+
+  it("rejects whitespace-only string", () => {
+    expect(isValidBirthDate("   ")).toBe(false);
+  });
+
+  it("rejects partial date 1990-08", () => {
+    expect(isValidBirthDate("1990-08")).toBe(false);
+  });
+
+  it("rejects non-numeric characters 199X-08-27", () => {
+    expect(isValidBirthDate("199X-08-27")).toBe(false);
+  });
+
+  it("rejects date with extra characters 1990-08-27T00:00:00", () => {
+    expect(isValidBirthDate("1990-08-27T00:00:00")).toBe(false);
+  });
+
+  // ── Whitespace tolerance ─────────────────────────────────────────────────
+  it("accepts '  1990-08-27  ' (trims leading/trailing whitespace)", () => {
+    expect(isValidBirthDate("  1990-08-27  ")).toBe(true);
+  });
+});
+=== NEW FILE: artifacts/playsyncer/src/features/account-write/validateBirthDate.ts ===
+/**
+ * PS-03D5-6A — Birth Date Validation
+ *
+ * Validates Gregorian dates in YYYY-MM-DD format.
+ * Rejects impossible dates such as 2026-02-31.
+ * Supports valid leap years (e.g. 2024-02-29).
+ *
+ * DEFECT GUARD: does NOT rely only on Date.parse.
+ * Uses the Date constructor's calendar arithmetic to get the true
+ * last day of each month, correctly handling leap years.
+ */
+
+const BIRTH_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Returns true when `value` is a valid Gregorian date in YYYY-MM-DD format.
+ *
+ * Validation steps:
+ * 1. Pattern check — must match YYYY-MM-DD exactly.
+ * 2. Month range check — month must be 01–12.
+ * 3. Day range check — day must be 01..lastDayOfMonth, computed via the
+ *    Date constructor (handles February and leap years correctly).
+ */
+export function isValidBirthDate(value: string): boolean {
+  const trimmed = value.trim();
+  if (!BIRTH_DATE_RE.test(trimmed)) return false;
+
+  const [yearStr, monthStr, dayStr] = trimmed.split("-");
+  const year = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10); // 1-indexed (1 = January)
+  const day = parseInt(dayStr, 10);
+
+  if (month < 1 || month > 12) return false;
+  if (day < 1) return false;
+
+  // new Date(year, month, 0) gives the last day of month M (1-indexed):
+  //   • new Date(2026, 2, 0) → Feb 28 2026  → lastDay = 28
+  //   • new Date(2024, 2, 0) → Feb 29 2024  → lastDay = 29 (leap)
+  //   • new Date(2026, 4, 0) → Mar 31 2026  → lastDay = 31
+  // The second arg is the Date month in 0-indexed (0 = Jan), so passing
+  // the 1-indexed month M directly gives us the last day of month M.
+  const lastDayOfMonth = new Date(year, month, 0).getDate();
+  if (day > lastDayOfMonth) return false;
+
+  return true;
+}

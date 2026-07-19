@@ -1,0 +1,40 @@
+=== PS-03D5-6A MANIFEST ===
+Generated: 2026-07-19
+
+Feature files:
+artifacts/playsyncer/src/features/account-write/CreateAccountDialog.tsx
+artifacts/playsyncer/src/features/account-write/DeleteUnavailableDialog.tsx
+artifacts/playsyncer/src/features/account-write/DuplicateWarningDialog.tsx
+artifacts/playsyncer/src/features/account-write/EditAccountDialog.tsx
+artifacts/playsyncer/src/features/account-write/index.ts
+artifacts/playsyncer/src/features/account-write/parseApiError.ts
+artifacts/playsyncer/src/features/account-write/StatusOverrideDialog.tsx
+artifacts/playsyncer/src/features/account-write/__tests__/CreateAccountDialog.test.tsx
+artifacts/playsyncer/src/features/account-write/__tests__/DeleteUnavailableDialog.test.tsx
+artifacts/playsyncer/src/features/account-write/__tests__/EditAccountDialog.test.tsx
+artifacts/playsyncer/src/features/account-write/__tests__/isolation.test.tsx
+artifacts/playsyncer/src/features/account-write/__tests__/parseApiError.test.ts
+artifacts/playsyncer/src/features/account-write/__tests__/StatusOverrideDialog.test.tsx
+artifacts/playsyncer/src/features/account-write/__tests__/validateBirthDate.test.ts
+artifacts/playsyncer/src/features/account-write/validateBirthDate.ts
+
+Report files:
+reports/ps03d5-6a.diff
+reports/ps03d5-6a-execution-log.md
+reports/ps03d5-6a-manifest.txt
+reports/ps03d5-6a-salvage-matrix.md
+reports/ps03d5-6a-validation-full.txt
+
+Updated docs:
+docs/CURRENT_PHASE.md
+
+Test counts:
+  parseApiError.test.ts: 17
+  validateBirthDate.test.ts: 22
+  CreateAccountDialog.test.tsx: 19
+  EditAccountDialog.test.tsx: 16
+  StatusOverrideDialog.test.tsx: 11
+  DeleteUnavailableDialog.test.tsx: 7
+  isolation.test.tsx: 6
+  TOTAL NEW: 98
+  TOTAL PASSING: 145/145

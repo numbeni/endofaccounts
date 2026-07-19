@@ -1,0 +1,204 @@
+PS-03D5-6A VALIDATION FULL REPORT
+Generated: 2026-07-19
+==============================================
+
+══════════════════════════════════════════════
+STEP 1: pnpm install --frozen-lockfile
+══════════════════════════════════════════════
+COMMAND: pnpm install --frozen-lockfile
+EXIT CODE: 0
+
+STDOUT:
+Scope: all 9 workspace projects
+Lockfile is up to date, resolution step is skipped
+Already up to date
+. preinstall$ sh -c 'rm -f package-lock.json yarn.lock; ...'
+└─ Done in 36ms
+Done in 1.5s using pnpm v10.26.1
+
+STDERR: (none)
+
+══════════════════════════════════════════════
+STEP 2: pnpm run typecheck (tsc --build)
+══════════════════════════════════════════════
+COMMAND: cd artifacts/playsyncer && npx tsc --build
+EXIT CODE: 0
+
+STDOUT: (none — clean exit)
+STDERR: (none)
+
+NOTE: tsc --build required to resolve project references to lib/api-client-react.
+The pnpm typecheck script uses tsc --noEmit which requires the reference to be
+pre-built. tsc --build builds the reference and then typechecks all dependent
+files. All 0 errors across 19 source files.
+
+══════════════════════════════════════════════
+STEP 3: pnpm --filter @workspace/playsyncer run test (vitest)
+══════════════════════════════════════════════
+COMMAND: pnpm --filter @workspace/playsyncer run test -- --reporter=verbose
+EXIT CODE: 0
+
+STDOUT:
+> @workspace/playsyncer@0.0.0 test /home/runner/workspace/artifacts/playsyncer
+> vitest run --config vitest.config.ts -- --reporter=verbose
+
+ RUN  v3.2.7 /home/runner/workspace/artifacts/playsyncer
+
+ ✓ src/features/account-write/__tests__/CreateAccountDialog.test.tsx (19 tests) 3571ms
+   ✓ CreateAccountDialog > renders all required fields
+   ✓ CreateAccountDialog > does not render statusOverride during Create
+   ✓ CreateAccountDialog > validates required fields and shows Persian error messages
+   ✓ CreateAccountDialog > rejects invalid birth date format (YYYY/MM/DD)
+   ✓ CreateAccountDialog > rejects impossible birth date 2026-02-31
+   ✓ CreateAccountDialog > sends correct request shape on valid submit
+   ✓ CreateAccountDialog > does not allow backup codes array to be empty (at least one required)
+   ✓ CreateAccountDialog > backup code rows can be added
+   ✓ CreateAccountDialog > backup code rows can be removed
+   ✓ CreateAccountDialog > opens DuplicateWarningDialog on first DUPLICATE_WARNING
+   ✓ CreateAccountDialog > sends confirmed: true on duplicate confirm
+   ✓ CreateAccountDialog > cancel on DuplicateWarningDialog sends no retry
+   ✓ CreateAccountDialog > second DUPLICATE_WARNING does NOT open dialog again (no retry loop)
+   ✓ CreateAccountDialog > shows PERSIAN_DISABLED_MSG for ACCOUNT_OPS_DISABLED
+   ✓ CreateAccountDialog > shows PERSIAN_GENERIC_MSG for unknown error
+   ✓ CreateAccountDialog > never renders raw error messages, URLs, or server text
+   ✓ CreateAccountDialog > clears password and backup codes after success
+   ✓ CreateAccountDialog > clears password and backup codes when dialog is closed
+   ✓ CreateAccountDialog > does not render when open=false
+
+ ✓ src/features/account-write/__tests__/EditAccountDialog.test.tsx (16 tests) 621ms
+   ✓ EditAccountDialog > prefills onlineId and birthDate from the safe DTO
+   ✓ EditAccountDialog > never prefills PSN Password
+   ✓ EditAccountDialog > starts psnEmail, emailPassword, familyManagementEmail as empty
+   ✓ EditAccountDialog > displays account identifier read-only, does not submit it
+   ✓ EditAccountDialog > submits only changed fields — unchanged onlineId is omitted
+   ✓ EditAccountDialog > shows 'no changes' message when nothing is changed
+   ✓ EditAccountDialog > does not render Backup Code editing section
+   ✓ EditAccountDialog > opens DuplicateWarningDialog on DUPLICATE_WARNING and shows field labels only
+   ✓ EditAccountDialog > sends confirmed: true on duplicate confirm
+   ✓ EditAccountDialog > second DUPLICATE_WARNING shows generic error (no retry loop)
+   ✓ EditAccountDialog > shows PERSIAN_DISABLED_MSG for ACCOUNT_OPS_DISABLED
+   ✓ EditAccountDialog > shows PERSIAN_GENERIC_MSG for unknown error
+   ✓ EditAccountDialog > clears sensitive fields on Account switch (account.id change)
+   ✓ EditAccountDialog > clears sensitive fields when external open=false
+   ✓ EditAccountDialog > does not render when open=false
+   ✓ EditAccountDialog > does not render when account is null
+
+ ✓ src/features/account-write/__tests__/StatusOverrideDialog.test.tsx (11 tests) 239ms
+   ✓ StatusOverrideDialog > offers SOLD, INACTIVE, and Clear Override options
+   ✓ StatusOverrideDialog > does NOT offer AVAILABLE or PARTIALLY_SOLD
+   ✓ StatusOverrideDialog > sends { statusOverride: 'SOLD' } when SOLD is selected
+   ✓ StatusOverrideDialog > sends { statusOverride: 'INACTIVE' } when INACTIVE is selected
+   ✓ StatusOverrideDialog > sends { statusOverride: null } for Clear Override
+   ✓ StatusOverrideDialog > calls onSuccess after successful mutation
+   ✓ StatusOverrideDialog > shows PERSIAN_DISABLED_MSG when ACCOUNT_OPS_DISABLED
+   ✓ StatusOverrideDialog > shows PERSIAN_GENERIC_MSG for unknown error
+   ✓ StatusOverrideDialog > does not render when open=false
+   ✓ StatusOverrideDialog > calls onClose when Cancel is clicked
+   ✓ StatusOverrideDialog > does not render raw error messages, URLs, passwords, or server text
+
+ ✓ src/features/account-write/__tests__/DeleteUnavailableDialog.test.tsx (7 tests) 83ms
+   ✓ DeleteUnavailableDialog > renders the approved Persian deletion-unavailable message
+   ✓ DeleteUnavailableDialog > directs the user toward INACTIVE status
+   ✓ DeleteUnavailableDialog > calls onClose when the close button is clicked
+   ✓ DeleteUnavailableDialog > calls onClose when the backdrop is clicked
+   ✓ DeleteUnavailableDialog > does not render when open=false
+   ✓ DeleteUnavailableDialog > sends zero DELETE requests (fetch is not called)
+   ✓ DeleteUnavailableDialog > does not display raw Account IDs, passwords, or URLs
+
+ ✓ src/features/account-write/__tests__/isolation.test.tsx (6 tests) 159ms
+   ✓ AccountCardReadOnly isolation > does not render any Account Write controls
+   ✓ AccountCardReadOnly isolation > does not have Create, Edit, Status Override, or Delete buttons
+   ✓ AccountDetailsReadOnly isolation > does not render Account Write controls
+   ✓ AccountDetailsReadOnly isolation > does not render Edit or Delete action buttons
+   ✓ Feature barrel isolation > does not export deleteAccount or useDeleteAccount
+   ✓ Zero real network requests > documents the setup.ts invariant: no real fetch calls in any feature test
+
+ ✓ src/features/account-write/__tests__/parseApiError.test.ts (17 tests) 8ms
+   ✓ parseMutationError > returns duplicate_warning when data.code === DUPLICATE_WARNING
+   ✓ parseMutationError > returns ops_disabled when data.code === ACCOUNT_OPS_DISABLED
+   ✓ parseMutationError > returns generic for unknown code
+   ✓ parseMutationError > returns generic when data is null
+   ✓ parseMutationError > returns generic when error is not an object
+   ✓ parseMutationError > returns generic when error has no .data field
+   ✓ parseMutationError > does NOT detect ACCOUNT_OPS_DISABLED from Error.message (defect guard)
+   ✓ parseMutationError > returns empty duplicateFields array when detail is missing
+   ✓ parseMutationError > filters out non-string items from duplicateFields
+   ✓ parseMutationError > reads from error.data (defect guard — not error.response)
+   ✓ safeMutationErrorMessage > returns PERSIAN_DISABLED_MSG for ops_disabled
+   ✓ safeMutationErrorMessage > returns PERSIAN_GENERIC_MSG for generic
+   ✓ safeMutationErrorMessage > PERSIAN_DISABLED_MSG contains the approved text
+   ✓ safeMutationErrorMessage > PERSIAN_GENERIC_MSG does not contain raw HTTP details or server text
+   ✓ DUPLICATE_FIELD_LABELS > maps psnEmail to safe Persian label
+   ✓ DUPLICATE_FIELD_LABELS > maps familyManagementEmail to safe Persian label
+   ✓ DUPLICATE_FIELD_LABELS > maps onlineId to safe Persian label
+
+ ✓ src/features/account-write/__tests__/validateBirthDate.test.ts (22 tests) 7ms
+   ✓ isValidBirthDate > accepts a valid date 1990-08-27
+   ✓ isValidBirthDate > accepts 2001-01-01 (January 1)
+   ✓ isValidBirthDate > accepts 2000-12-31 (December 31)
+   ✓ isValidBirthDate > accepts 1985-02-28 (February 28 on a non-leap year)
+   ✓ isValidBirthDate > accepts 2024-02-29 (valid leap year)
+   ✓ isValidBirthDate > accepts 2000-02-29 (2000 is a leap year)
+   ✓ isValidBirthDate > rejects 2026-02-31 (February cannot have 31 days)
+   ✓ isValidBirthDate > rejects 2026-02-29 (2026 is not a leap year)
+   ✓ isValidBirthDate > rejects 1900-02-29 (1900 is not a leap year)
+   ✓ isValidBirthDate > rejects 2026-04-31 (April has only 30 days)
+   ✓ isValidBirthDate > rejects 2026-06-31 (June has only 30 days)
+   ✓ isValidBirthDate > rejects 2026-01-00 (day 0 is invalid)
+   ✓ isValidBirthDate > rejects 2026-13-01 (month 13 is invalid)
+   ✓ isValidBirthDate > rejects 2026-00-15 (month 0 is invalid)
+   ✓ isValidBirthDate > rejects YYYY/MM/DD format (wrong separator)
+   ✓ isValidBirthDate > rejects DD-MM-YYYY format
+   ✓ isValidBirthDate > rejects empty string
+   ✓ isValidBirthDate > rejects whitespace-only string
+   ✓ isValidBirthDate > rejects partial date 1990-08
+   ✓ isValidBirthDate > rejects non-numeric characters 199X-08-27
+   ✓ isValidBirthDate > rejects date with extra characters 1990-08-27T00:00:00
+   ✓ isValidBirthDate > accepts '  1990-08-27  ' (trims leading/trailing whitespace)
+
+ ✓ src/pages/GameDetailPage.test.tsx (13 tests) 249ms
+ ✓ src/components/AccountCardReadOnly.test.tsx (15 tests) 188ms
+ ✓ src/components/AccountDetailsReadOnly.test.tsx (13 tests) 177ms
+ ✓ src/components/AccountStatusBadge.test.tsx (6 tests) 41ms
+
+ Test Files  11 passed (11)
+ Tests  145 passed (145)
+ Start at  17:15:40
+ Duration  14.86s (transform 531ms, setup 1.44s, collect 1.88s, tests 5.33s, environment 3.71s, prepare 664ms)
+
+STDERR: (none)
+
+══════════════════════════════════════════════
+STEP 4: pnpm --filter @workspace/playsyncer run build
+══════════════════════════════════════════════
+COMMAND: PORT=3000 BASE_PATH=/playsyncer pnpm --filter @workspace/playsyncer run build
+EXIT CODE: 0
+
+STDOUT:
+> @workspace/playsyncer@0.0.0 build /home/runner/workspace/artifacts/playsyncer
+> vite build --config vite.config.ts
+
+vite v7.3.5 building client environment for production...
+src/components/ui/sonner.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+✓ 1768 modules transformed.
+dist/public/index.html                                               0.70 kB │ gzip:   0.44 kB
+dist/public/assets/vazirmatn-latin-ext-wght-normal-tDTa1Fj6.woff2   21.86 kB
+dist/public/assets/vazirmatn-latin-wght-normal-BFexNX-K.woff2       34.52 kB
+dist/public/assets/vazirmatn-arabic-wght-normal-Cafbb7Zc.woff2      46.31 kB
+dist/public/assets/index-BTS6MEib.css                              114.74 kB │ gzip:  18.73 kB
+dist/public/assets/index-BUbbqYUd.js                               400.44 kB │ gzip: 120.42 kB
+✓ built in 2.99s
+
+STDERR:
+src/components/ui/sonner.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+(pre-existing warning unrelated to this sub-stage)
+
+══════════════════════════════════════════════
+SUMMARY
+══════════════════════════════════════════════
+pnpm install --frozen-lockfile   EXIT: 0  PASS
+tsc --build (typecheck)          EXIT: 0  PASS
+vitest run (145 tests)           EXIT: 0  PASS  (145/145)
+vite build (production)          EXIT: 0  PASS
+
+ALL CHECKS PASSED

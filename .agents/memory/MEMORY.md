@@ -1,0 +1,3 @@
+- [Account Write Feature Isolation](account-write-isolation.md) — feature is written but NOT mounted; must never be imported in App.tsx, GameDetailPage, or read-only components.
+- [ApiError Shape](api-error-shape.md) — structured errors are in `error.data` (not `error.response`); code in `data.code`; use parseMutationError(), never Error.message.
+- [Build Env Vars](build-env-vars.md) — production build requires PORT and BASE_PATH env vars; tsc --build needed before typecheck due to project references.
