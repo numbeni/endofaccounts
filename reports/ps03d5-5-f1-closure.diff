@@ -1,0 +1,91 @@
+--- /mnt/data/playsyncer_ps03d5_5_f1_original/docs/CURRENT_PHASE.md	2026-07-19 14:57:53.000000000 +0000
++++ docs/CURRENT_PHASE.md	2026-07-19 15:28:39.660912717 +0000
+@@ -1,21 +1,27 @@
+ Current stage:
+ PS-03D5 — Account Mutation Implementation, Runtime Disabled
+ 
+-Current sub-stage:
++Previous completed correction:
+ PS-03D5-5-F1 — Account Delete Fail-Closed Correction
+ 
+-Current status:
+-PS-03D5-5-F1 — CORRECTION COMPLETE, AWAITING SOURCE REVIEW
++Correction status:
++APPROVED_AND_CLOSED
+ 
+ Corrected parent sub-stage:
+ PS-03D5-5 — Delete Account Safety Boundary, Runtime Disabled
+ 
+ Parent sub-stage status:
+-IMPLEMENTATION REQUIRES CONTROLLED CORRECTION
+-NOT APPROVED
+-NOT CLOSED UNTIL PS-03D5-5-F1 REVIEW
++APPROVED_AND_CLOSED_AFTER_FAIL_CLOSED_CORRECTION
+ 
+-Next planned sub-stage:
++Current sub-stage:
+ PS-03D5-6 — Account Write Frontend, Runtime Disabled
+ 
+-Keep runtime activation deferred to PS-03D7.
++Current status:
++PS-03D5-6 — AWAITING COMMAND CENTER AUTHORIZATION TO START
++
++Next planned sub-stage:
++PS-03D5-7 — Account Mutation Verification and PS-03D5 Closure
++
++Runtime activation of Account mutations remains deferred to a future Security phase outside PS-03.
++
++Hard Delete remains unavailable until a future Orders / Assignment phase provides an authoritative Assignment History contract and receives explicit Command Center approval.
+--- /mnt/data/playsyncer_ps03d5_5_f1_original/docs/DECISION_LOG.md	2026-07-19 14:58:16.000000000 +0000
++++ docs/DECISION_LOG.md	2026-07-19 15:28:39.676629623 +0000
+@@ -1375,3 +1375,50 @@
+ - PS-03D5-5 is NOT closed until PS-03D5-5-F1 is reviewed and approved.
+ - PS-03D5-6 — Account Write Frontend, Runtime Disabled is not started automatically.
+ - Runtime activation of Account mutations remains deferred to PS-03D7.
++
++## 2026-07-19 — PS-03D5-5-F1 Approved and Closed
++
++PS-03D5-5-F1 — Account Delete Fail-Closed Correction is approved and closed after Command Center source review.
++
++### Final canonical Delete contract
++
++- Public production `DELETE /api/accounts/{accountId}` remains runtime-disabled and returns HTTP 403 with:
++  - `error`: `Account operations are currently disabled`
++  - `code`: `ACCOUNT_OPS_DISABLED`
++- The real `deleteAccountHandler` remains unmounted in the production router.
++- For every valid existing Account, the isolated internal handler returns HTTP 409 with:
++  - `error`: `Account deletion is not available until authoritative assignment history is implemented`
++  - `code`: `ACCOUNT_DELETE_NOT_AVAILABLE`
++- Invalid UUID requests retain the existing 400 contract.
++- Missing or already-deleted Accounts retain the existing 404 contract.
++- No current Delete path hard-deletes or mutates Accounts, Capacities, Backup Codes, identifiers, Games, or `capacity_customers`.
++- The current `capacity_customers` table is not authoritative Assignment History. Its rows may prove historical usage, but the absence of rows cannot authorize deletion.
++
++### Closure status
++
++- PS-03D5-5-F1 is `APPROVED_AND_CLOSED`.
++- PS-03D5-5 is `APPROVED_AND_CLOSED_AFTER_FAIL_CLOSED_CORRECTION`.
++- PS-03D5 remains open.
++- The next authorized sub-stage is PS-03D5-6 — Account Write Frontend, Runtime Disabled, awaiting Command Center authorization to start.
++- PS-03D5-6 was not started as part of this closure.
++
++### Scope boundaries preserved
++
++- Hard Delete will be reconsidered only in a future Orders / Assignment phase after canonical Order, OrderItem, FulfillmentUnit, Assignment, Assignment History, migration, historical-data, permission, and audit contracts are approved.
++- Authentication, Admin Levels, RBAC, Permission, Audit Log, runtime mutation activation, Secret Reveal, and authorized Backup Code reveal remain outside PS-03 in a future Security phase.
++- No speculative phase number is assigned to future Security or Orders / Assignment work.
++
++### Required work before future mutation activation
++
++- Online ID case-preservation and case-insensitive advisory-lock normalization.
++- Server-side error-log redaction for database parameters and sensitive internal details.
++
++### Validation evidence
++
++- The approved PS-03D5-5-F1 review source passed 240 automated tests with 0 failures:
++  - API server: 139/139
++  - DB helpers: 16/16
++  - DB migrations: 38/38
++  - Frontend: 47/47
++- Typechecks, API build, frontend production build, OpenAPI code generation, and `git diff --check` passed in the review validation run.
++- Final closure changes are documentation and packaging only; no runtime source, schema, migration, generated API, or test behavior changed after the approved validation run.

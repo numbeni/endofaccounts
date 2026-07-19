@@ -1,0 +1,13 @@
+PS-03D5-5: Delete Account Safety Boundary, Runtime Disabled
+
+- Add real deleteAccount service and deleteAccountHandler (exported, not mounted).
+- OpenAPI DELETE /api/accounts/{accountId} with operationId deleteAccount.
+- Regenerate React client and Zod schemas (deleteAccount / useDeleteAccount generated).
+- Block deletion when any capacity_customers history exists for any Account Capacity (409 ACCOUNT_HAS_ASSIGNMENT_HISTORY).
+- Treat all assignment history forms conservatively: active, removed, cancelled, and soft-deleted.
+- Lock Account and Capacities with FOR UPDATE inside the delete transaction for race safety.
+- Explicitly delete Backup Codes and Capacities because FKs are ON DELETE NO ACTION.
+- Add comprehensive accounts.delete.test.ts with 15 focused tests covering success, blocking, validation, rollback, concurrency, and no-reuse.
+- Update account-contract.test.ts to allow deleteAccount generated hook; confirm frontend does not import it.
+- Update docs/CURRENT_PHASE.md and docs/DECISION_LOG.md.
+- Full validation: 244 tests, 0 failures.

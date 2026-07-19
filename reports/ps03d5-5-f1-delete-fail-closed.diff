@@ -1,0 +1,859 @@
+diff --git a/artifacts/api-server/src/lib/account-contract.test.ts b/artifacts/api-server/src/lib/account-contract.test.ts
+index 1c04fcf..7cb7f2c 100644
+--- a/artifacts/api-server/src/lib/account-contract.test.ts
++++ b/artifacts/api-server/src/lib/account-contract.test.ts
+@@ -111,8 +111,8 @@ describe("Account OpenAPI contract", () => {
+       "StandardApiError",
+     ];
+     // DeleteAccount is not expected in the generated Zod schema file because the
+-    // 204 response has no body, but the generated React client must still expose
+-    // the operation and mutation hook.
++    // current contract has no successful response body, but the generated React
++    // client must still expose the operation and mutation hook for future wiring.
+     for (const name of required) {
+       assert.ok(blocks.has(name), `expected generated schema ${name} to exist`);
+     }
+diff --git a/artifacts/api-server/src/routes/accounts.delete.test.ts b/artifacts/api-server/src/routes/accounts.delete.test.ts
+index fed19ae..7b95b99 100644
+--- a/artifacts/api-server/src/routes/accounts.delete.test.ts
++++ b/artifacts/api-server/src/routes/accounts.delete.test.ts
+@@ -20,7 +20,6 @@ const TEST_MASTER_KEY = Buffer.from(
+ 
+ let deleteAccountHandler: typeof import("./accounts.ts")["deleteAccountHandler"];
+ let createAccountService: typeof import("../services/account/index.ts")["createAccount"];
+-let deleteAccountService: typeof import("../services/account/index.ts")["deleteAccount"];
+ 
+ let idCounter = 0;
+ function nextId(): string {
+@@ -82,7 +81,6 @@ describe("Delete Account handler", { concurrency: 1 }, () => {
+     deleteAccountHandler = accountsModule.deleteAccountHandler;
+     const serviceModule = await import("../services/account/index.ts");
+     createAccountService = serviceModule.createAccount;
+-    deleteAccountService = serviceModule.deleteAccount;
+ 
+     execSync("pnpm run build", {
+       cwd: path.resolve(__dirname, "..", ".."),
+@@ -215,57 +213,44 @@ describe("Delete Account handler", { concurrency: 1 }, () => {
+     return assignment;
+   }
+ 
+-  async function installDeleteFailureTrigger() {
+-    await db.db.execute(sql`
+-      CREATE OR REPLACE FUNCTION force_account_delete_failure()
+-      RETURNS trigger AS $$
+-      BEGIN
+-        RAISE EXCEPTION 'forced account delete failure';
+-      END;
+-      $$ LANGUAGE plpgsql;
+-    `);
+-    await db.db.execute(sql`
+-      CREATE TRIGGER force_account_delete_failure_trigger
+-      BEFORE DELETE ON accounts
+-      FOR EACH ROW
+-      EXECUTE FUNCTION force_account_delete_failure();
+-    `);
+-  }
++  async function assertAccountDeleteNotAvailable(
++    accountId: string,
++  ): Promise<{ before: ReturnType<typeof getRowCounts> extends Promise<infer T> ? T : never }> {
++    const before = await getRowCounts();
++    const beforeCapacities = await getAccountCapacities(accountId);
++    const beforeBackupCodes = await getBackupCodes(accountId);
+ 
+-  async function removeDeleteFailureTrigger() {
+-    await db.db.execute(sql`
+-      DROP TRIGGER IF EXISTS force_account_delete_failure_trigger ON accounts;
+-    `);
+-    await db.db.execute(sql`
+-      DROP FUNCTION IF EXISTS force_account_delete_failure();
+-    `);
+-  }
++    const res = await fetch(deleteUrl(accountId), { method: "DELETE" });
++    assert.strictEqual(res.status, 409);
++    const data = (await res.json()) as { error: string; code: string };
++    assert.strictEqual(
++      data.error,
++      "Account deletion is not available until authoritative assignment history is implemented",
++    );
++    assert.strictEqual(data.code, "ACCOUNT_DELETE_NOT_AVAILABLE");
++    assertNoSecrets(JSON.stringify(data));
+ 
+-  async function createCapacityDeleteDelayTrigger() {
+-    await db.db.execute(sql`
+-      CREATE OR REPLACE FUNCTION delay_capacity_delete()
+-      RETURNS trigger AS '
+-      BEGIN
+-        PERFORM pg_sleep(0.3);
+-        RETURN NULL;
+-      END;
+-      ' LANGUAGE plpgsql;
+-    `);
+-    await db.db.execute(sql`
+-      CREATE TRIGGER delay_capacity_delete_trigger
+-      BEFORE DELETE ON account_capacities
+-      FOR EACH STATEMENT
+-      EXECUTE FUNCTION delay_capacity_delete();
+-    `);
+-  }
++    const after = await getRowCounts();
++    assert.strictEqual(after.accounts, before.accounts, "account not deleted");
++    assert.strictEqual(after.capacities, before.capacities, "capacities not deleted");
++    assert.strictEqual(after.backupCodes, before.backupCodes, "backup codes not deleted");
++    assert.strictEqual(
++      after.capacityCustomers,
++      before.capacityCustomers,
++      "capacity_customers not changed",
++    );
++    assert.deepStrictEqual(
++      (await getAccountCapacities(accountId)).map((c) => c.id),
++      beforeCapacities.map((c) => c.id),
++      "capacities unchanged",
++    );
++    assert.deepStrictEqual(
++      (await getBackupCodes(accountId)).map((c) => c.id),
++      beforeBackupCodes.map((c) => c.id),
++      "backup codes unchanged",
++    );
+ 
+-  async function dropCapacityDeleteDelayTrigger() {
+-    await db.db.execute(sql`
+-      DROP TRIGGER IF EXISTS delay_capacity_delete_trigger ON account_capacities;
+-    `);
+-    await db.db.execute(sql`
+-      DROP FUNCTION IF EXISTS delay_capacity_delete();
+-    `);
++    return { before };
+   }
+ 
+   it("public DELETE /accounts/:id returns 403 and writes nothing", async () => {
+@@ -278,7 +263,7 @@ describe("Delete Account handler", { concurrency: 1 }, () => {
+     });
+     assert.strictEqual(res.status, 403);
+     const data = (await res.json()) as { error: string; code: string };
+-    assert.strictEqual(data.error, "Account operations are not authorized");
++    assert.strictEqual(data.error, "Account operations are currently disabled");
+     assert.strictEqual(data.code, "ACCOUNT_OPS_DISABLED");
+ 
+     const after = await getRowCounts();
+@@ -288,46 +273,13 @@ describe("Delete Account handler", { concurrency: 1 }, () => {
+     assert.strictEqual(after.capacityCustomers, before.capacityCustomers);
+   });
+ 
+-  it("deletes an Account with no assignment history and returns 204", async () => {
+-    const game = await createGame("Delete Success Game");
++  it("internal handler returns 409 with zero writes when no capacity_customers history exists", async () => {
++    const game = await createGame("Delete No History Game");
+     const account = await createAccount(game.id);
+-    const accountId = account.id;
+-    const before = await getRowCounts();
+-    const beforeCapacities = await getAccountCapacities(accountId);
+-    const beforeBackupCodes = await getBackupCodes(accountId);
+-    assert.ok(beforeCapacities.length > 0, "account has capacities");
+-    assert.ok(beforeBackupCodes.length > 0, "account has backup codes");
+-
+-    const res = await fetch(deleteUrl(accountId), { method: "DELETE" });
+-    assert.strictEqual(res.status, 204);
+-    assert.strictEqual(await res.text(), "");
+-
+-    const after = await getRowCounts();
+-    assert.strictEqual(after.accounts, before.accounts - 1, "account deleted");
+-    assert.strictEqual(after.capacities, before.capacities - beforeCapacities.length, "capacities deleted");
+-    assert.strictEqual(after.backupCodes, before.backupCodes - beforeBackupCodes.length, "backup codes deleted");
+-
+-    const remainingAccount = await db.db
+-      .select()
+-      .from(db.accountsTable)
+-      .where(eq(db.accountsTable.id, accountId))
+-      .limit(1);
+-    assert.strictEqual(remainingAccount.length, 0, "account row no longer exists");
++    await assertAccountDeleteNotAvailable(account.id);
+   });
+ 
+-  it("deleted Account cannot be retrieved via GET /accounts/:id", async () => {
+-    const game = await createGame("Delete Gone Game");
+-    const account = await createAccount(game.id);
+-    const accountId = account.id;
+-
+-    const deleteRes = await fetch(deleteUrl(accountId), { method: "DELETE" });
+-    assert.strictEqual(deleteRes.status, 204);
+-
+-    const getRes = await fetch(`${publicBaseUrl}/accounts/${accountId}`);
+-    assert.strictEqual(getRes.status, 404);
+-  });
+-
+-  it("active assignment history blocks deletion with 409 and zero writes", async () => {
++  it("internal handler returns 409 with zero writes when active capacity_customers rows exist", async () => {
+     const game = await createGame("Delete Active Assignment Game");
+     const account = await createAccount(game.id);
+     const accountId = account.id;
+@@ -335,36 +287,10 @@ describe("Delete Account handler", { concurrency: 1 }, () => {
+     const order = await createOrder();
+     await createAssignment(capacities[0].id, order.id, "active");
+ 
+-    const before = await getRowCounts();
+-    const beforeCapacities = await getAccountCapacities(accountId);
+-    const beforeBackupCodes = await getBackupCodes(accountId);
+-
+-    const res = await fetch(deleteUrl(accountId), { method: "DELETE" });
+-    assert.strictEqual(res.status, 409);
+-    const data = (await res.json()) as { error: string; code: string };
+-    assert.strictEqual(data.error, "Account has assignment history and cannot be deleted");
+-    assert.strictEqual(data.code, "ACCOUNT_HAS_ASSIGNMENT_HISTORY");
+-    assertNoSecrets(JSON.stringify(data));
+-    assert.ok(!JSON.stringify(data).includes(order.id), "response leaks order id");
+-    assert.ok(!JSON.stringify(data).includes(capacities[0].id), "response leaks capacity id");
+-
+-    const after = await getRowCounts();
+-    assert.strictEqual(after.accounts, before.accounts, "account not deleted");
+-    assert.strictEqual(after.capacities, before.capacities, "capacities not deleted");
+-    assert.strictEqual(after.backupCodes, before.backupCodes, "backup codes not deleted");
+-    assert.deepStrictEqual(
+-      (await getAccountCapacities(accountId)).map((c) => c.id),
+-      beforeCapacities.map((c) => c.id),
+-      "capacities unchanged",
+-    );
+-    assert.deepStrictEqual(
+-      (await getBackupCodes(accountId)).map((c) => c.id),
+-      beforeBackupCodes.map((c) => c.id),
+-      "backup codes unchanged",
+-    );
++    await assertAccountDeleteNotAvailable(accountId);
+   });
+ 
+-  it("removed or cancelled assignment history still blocks deletion", async () => {
++  it("internal handler returns 409 with zero writes when removed capacity_customers rows exist", async () => {
+     const game = await createGame("Delete Removed Assignment Game");
+     const account = await createAccount(game.id);
+     const accountId = account.id;
+@@ -372,19 +298,21 @@ describe("Delete Account handler", { concurrency: 1 }, () => {
+     const order = await createOrder();
+     await createAssignment(capacities[0].id, order.id, "removed");
+ 
+-    const before = await getRowCounts();
+-    const res = await fetch(deleteUrl(accountId), { method: "DELETE" });
+-    assert.strictEqual(res.status, 409);
+-    const data = (await res.json()) as { code: string };
+-    assert.strictEqual(data.code, "ACCOUNT_HAS_ASSIGNMENT_HISTORY");
++    await assertAccountDeleteNotAvailable(accountId);
++  });
+ 
+-    const after = await getRowCounts();
+-    assert.strictEqual(after.accounts, before.accounts, "account not deleted");
+-    assert.strictEqual(after.capacities, before.capacities, "capacities not deleted");
+-    assert.strictEqual(after.backupCodes, before.backupCodes, "backup codes not deleted");
++  it("internal handler returns 409 with zero writes when cancelled capacity_customers rows exist", async () => {
++    const game = await createGame("Delete Cancelled Assignment Game");
++    const account = await createAccount(game.id);
++    const accountId = account.id;
++    const capacities = await getAccountCapacities(accountId);
++    const order = await createOrder();
++    await createAssignment(capacities[0].id, order.id, "cancelled");
++
++    await assertAccountDeleteNotAvailable(accountId);
+   });
+ 
+-  it("soft-deleted assignment history still blocks deletion", async () => {
++  it("internal handler returns 409 with zero writes when soft-deleted capacity_customers rows exist", async () => {
+     const game = await createGame("Delete Soft Deleted Assignment Game");
+     const account = await createAccount(game.id);
+     const accountId = account.id;
+@@ -392,19 +320,10 @@ describe("Delete Account handler", { concurrency: 1 }, () => {
+     const order = await createOrder();
+     await createAssignment(capacities[0].id, order.id, "active", new Date());
+ 
+-    const before = await getRowCounts();
+-    const res = await fetch(deleteUrl(accountId), { method: "DELETE" });
+-    assert.strictEqual(res.status, 409);
+-    const data = (await res.json()) as { code: string };
+-    assert.strictEqual(data.code, "ACCOUNT_HAS_ASSIGNMENT_HISTORY");
+-
+-    const after = await getRowCounts();
+-    assert.strictEqual(after.accounts, before.accounts, "account not deleted");
+-    assert.strictEqual(after.capacities, before.capacities, "capacities not deleted");
+-    assert.strictEqual(after.backupCodes, before.backupCodes, "backup codes not deleted");
++    await assertAccountDeleteNotAvailable(accountId);
+   });
+ 
+-  it("assignment on any capacity of the Account blocks deletion", async () => {
++  it("assignment on any capacity of the Account returns 409 with zero writes", async () => {
+     const game = await createGame("Delete Multi Capacity Assignment Game", "PS4_AND_PS5");
+     const account = await createAccount(game.id);
+     const accountId = account.id;
+@@ -414,10 +333,7 @@ describe("Delete Account handler", { concurrency: 1 }, () => {
+     const order = await createOrder();
+     await createAssignment(lastCapacity.id, order.id, "active");
+ 
+-    const res = await fetch(deleteUrl(accountId), { method: "DELETE" });
+-    assert.strictEqual(res.status, 409);
+-    const data = (await res.json()) as { code: string };
+-    assert.strictEqual(data.code, "ACCOUNT_HAS_ASSIGNMENT_HISTORY");
++    await assertAccountDeleteNotAvailable(accountId);
+   });
+ 
+   it("invalid UUID returns HTTP 400", async () => {
+@@ -452,41 +368,6 @@ describe("Delete Account handler", { concurrency: 1 }, () => {
+     assert.strictEqual(data.code, "ACCOUNT_NOT_FOUND");
+   });
+ 
+-  it("unexpected database error rolls back the complete deletion", async () => {
+-    const game = await createGame("Delete DB Failure Game");
+-    const account = await createAccount(game.id);
+-    const accountId = account.id;
+-    const before = await getRowCounts();
+-    const beforeCapacities = await getAccountCapacities(accountId);
+-    const beforeBackupCodes = await getBackupCodes(accountId);
+-
+-    await installDeleteFailureTrigger();
+-    try {
+-      const res = await fetch(deleteUrl(accountId), { method: "DELETE" });
+-      assert.strictEqual(res.status, 500);
+-      const data = (await res.json()) as { error: string; code: string };
+-      assert.strictEqual(data.error, "Internal server error");
+-      assert.strictEqual(data.code, "INTERNAL_ERROR");
+-      assertNoSecrets(JSON.stringify(data));
+-    } finally {
+-      await removeDeleteFailureTrigger();
+-    }
+-
+-    const after = await getRowCounts();
+-    assert.strictEqual(after.accounts, before.accounts, "account not deleted");
+-    assert.strictEqual(after.capacities, before.capacities, "capacities not deleted");
+-    assert.strictEqual(after.backupCodes, before.backupCodes, "backup codes not deleted");
+-
+-    assert.deepStrictEqual(
+-      (await getAccountCapacities(accountId)).map((c) => c.id),
+-      beforeCapacities.map((c) => c.id),
+-    );
+-    assert.deepStrictEqual(
+-      (await getBackupCodes(accountId)).map((c) => c.id),
+-      beforeBackupCodes.map((c) => c.id),
+-    );
+-  });
+-
+   it("unexpected handler error returns 500 INTERNAL_ERROR and hides details", async () => {
+     const app = express();
+     app.use(express.json());
+@@ -517,21 +398,21 @@ describe("Delete Account handler", { concurrency: 1 }, () => {
+     }
+   });
+ 
+-  it("unrelated Games and Accounts remain unchanged after deletion", async () => {
++  it("unrelated Games and Accounts remain unchanged after a delete attempt", async () => {
+     const gameA = await createGame("Delete Unrelated Game A");
+     const accountA = await createAccount(gameA.id);
+     const gameB = await createGame("Delete Unrelated Game B");
+     const accountB = await createAccount(gameB.id);
+ 
+     const res = await fetch(deleteUrl(accountA.id), { method: "DELETE" });
+-    assert.strictEqual(res.status, 204);
++    assert.strictEqual(res.status, 409);
+ 
+     const remainingA = await db.db
+       .select()
+       .from(db.accountsTable)
+       .where(eq(db.accountsTable.id, accountA.id))
+       .limit(1);
+-    assert.strictEqual(remainingA.length, 0, "account A deleted");
++    assert.strictEqual(remainingA.length, 1, "account A unchanged");
+ 
+     const remainingB = await db.db
+       .select()
+@@ -548,101 +429,25 @@ describe("Delete Account handler", { concurrency: 1 }, () => {
+     assert.strictEqual(gameBRow.length, 1, "game B unchanged");
+   });
+ 
+-  it("committed identifiers are not reused after deletion", async () => {
+-    const game = await createGame("Delete Identifier Reuse Game");
+-    const account1 = await createAccount(game.id);
+-    const accountCode1 = account1.accountCode;
+-    const displayNumber1 = account1.displayNumber;
+-
+-    const deleteRes = await fetch(deleteUrl(account1.id), { method: "DELETE" });
+-    assert.strictEqual(deleteRes.status, 204);
+-
+-    const account2 = await createAccount(game.id);
+-    assert.notStrictEqual(account2.accountCode, accountCode1, "account code reused");
+-    assert.notStrictEqual(account2.displayNumber, displayNumber1, "display number reused");
+-    assert.ok(
+-      Number(account2.accountCode.replace("ACC-", "")) > Number(accountCode1.replace("ACC-", "")),
+-      "global sequence advanced after deletion",
+-    );
+-  });
+-
+-  it("deleting an Account with no capacities still succeeds", async () => {
+-    const game = await createGame("Delete No Capacities Game");
++  it("identifiers are not changed after a delete attempt", async () => {
++    const game = await createGame("Delete Identifier Unchanged Game");
+     const account = await createAccount(game.id);
+     const accountId = account.id;
++    const accountCode = account.accountCode;
++    const displayNumber = account.displayNumber;
++    const accountNumberSeq = account.accountNumberSeq;
+ 
+-    // Remove capacities manually to simulate an unusual state.
+-    await db.db
+-      .delete(db.accountCapacitiesTable)
+-      .where(eq(db.accountCapacitiesTable.accountId, accountId));
+-
+-    const before = await getRowCounts();
+-    const res = await fetch(deleteUrl(accountId), { method: "DELETE" });
+-    assert.strictEqual(res.status, 204);
+-
+-    const after = await getRowCounts();
+-    assert.strictEqual(after.accounts, before.accounts - 1, "account deleted");
+-    assert.strictEqual(after.backupCodes, before.backupCodes - 2, "backup codes deleted");
+-  });
++    await assertAccountDeleteNotAvailable(accountId);
+ 
+-  it("locks capacities so concurrent assignment creation cannot race past deletion", async () => {
+-    const game = await createGame("Delete Concurrency Game");
+-    const account = await createAccount(game.id);
+-    const accountId = account.id;
+-    const capacities = await getAccountCapacities(accountId);
+-    assert.ok(capacities.length > 0, "account has capacities");
+-    const order = await createOrder();
+-
+-    await createCapacityDeleteDelayTrigger();
+-    try {
+-      const deletePromise = fetch(deleteUrl(accountId), { method: "DELETE" });
+-
+-      // Wait for the delete transaction to reach the capacity lock/delete phase.
+-      await new Promise((resolve) => setTimeout(resolve, 100));
+-
+-      // Try to create an assignment concurrently. The capacity rows are locked by
+-      // the delete transaction's FOR UPDATE, so this insert must wait.
+-      const assignmentPromise = db.db
+-        .insert(db.capacityCustomersTable)
+-        .values({
+-          capacityId: capacities[0].id,
+-          orderId: order.id,
+-          customerPhoneEncrypted: "encrypted-phone",
+-          status: "active",
+-        })
+-        .returning();
+-
+-      // Allow a short moment for the assignment insert to attempt and block.
+-      await new Promise((resolve) => setTimeout(resolve, 100));
+-
+-      const deleteRes = await deletePromise;
+-      assert.strictEqual(deleteRes.status, 204, "delete completed successfully");
+-
+-      try {
+-        await assignmentPromise;
+-        assert.fail("assignment insert should have failed after the Account was deleted");
+-      } catch (err) {
+-        const message = String(err).toLowerCase();
+-        assert.ok(
+-          message.includes("violates foreign key constraint") || message.includes("capacity_id"),
+-          "assignment failed because the capacity was deleted",
+-        );
+-      }
+-    } finally {
+-      await dropCapacityDeleteDelayTrigger();
+-    }
+-  });
+-
+-  it("delete service can be invoked directly without body parameters", async () => {
+-    const game = await createGame("Delete Service Direct Game");
+-    const account = await createAccount(game.id);
+-    const accountId = account.id;
+-    const before = await getRowCounts();
+-
+-    await deleteAccountService({ accountId });
+-
+-    const after = await getRowCounts();
+-    assert.strictEqual(after.accounts, before.accounts - 1, "account deleted via service");
++    const [row] = await db.db
++      .select()
++      .from(db.accountsTable)
++      .where(eq(db.accountsTable.id, accountId))
++      .limit(1);
++    assert.ok(row, "account still exists");
++    assert.strictEqual(row.accountCode, accountCode, "accountCode changed");
++    assert.strictEqual(row.displayNumber, displayNumber, "displayNumber changed");
++    assert.strictEqual(row.accountNumberSeq, accountNumberSeq, "accountNumberSeq changed");
+   });
+ });
+ 
+diff --git a/artifacts/api-server/src/routes/accounts.disabled.test.ts b/artifacts/api-server/src/routes/accounts.disabled.test.ts
+index 9078de5..19f6e4b 100644
+--- a/artifacts/api-server/src/routes/accounts.disabled.test.ts
++++ b/artifacts/api-server/src/routes/accounts.disabled.test.ts
+@@ -136,7 +136,7 @@ describe("Account mutation routes are disabled", () => {
+     });
+     assert.strictEqual(res.status, 403);
+     const data = (await res.json()) as { error: string; code: string };
+-    assert.strictEqual(data.error, "Account operations are not authorized");
++    assert.strictEqual(data.error, "Account operations are currently disabled");
+     assert.strictEqual(data.code, "ACCOUNT_OPS_DISABLED");
+     assert.strictEqual(countRows(databaseUrl, "accounts"), before);
+   });
+diff --git a/artifacts/api-server/src/routes/accounts.ts b/artifacts/api-server/src/routes/accounts.ts
+index 1ac47fd..0ddd784 100644
+--- a/artifacts/api-server/src/routes/accounts.ts
++++ b/artifacts/api-server/src/routes/accounts.ts
+@@ -39,7 +39,7 @@ import {
+   IdentifierConflictError,
+   EncryptionError,
+   AccountNotFoundError,
+-  AccountHasAssignmentHistoryError,
++  AccountDeleteNotAvailableError,
+ } from "../services/account/index.ts";
+ 
+ const router: IRouter = Router();
+@@ -49,6 +49,7 @@ router.param("gameId", requireUuidParam("gameId"));
+ router.param("id", requireUuidParam("id"));
+ 
+ const ACCOUNT_OPS_DISABLED = "Account operations are not authorized";
++const ACCOUNT_DELETE_DISABLED = "Account operations are currently disabled";
+ 
+ const PERSIAN = {
+   GAME_NOT_FOUND: "بازی یافت نشد",
+@@ -332,12 +333,12 @@ export async function deleteAccountHandler(
+       next(new HttpError(404, PERSIAN.ACCOUNT_NOT_FOUND, "ACCOUNT_NOT_FOUND"));
+       return;
+     }
+-    if (err instanceof AccountHasAssignmentHistoryError) {
++    if (err instanceof AccountDeleteNotAvailableError) {
+       next(
+         new HttpError(
+           409,
+-          "Account has assignment history and cannot be deleted",
+-          "ACCOUNT_HAS_ASSIGNMENT_HISTORY",
++          "Account deletion is not available until authoritative assignment history is implemented",
++          "ACCOUNT_DELETE_NOT_AVAILABLE",
+         ),
+       );
+       return;
+@@ -468,7 +469,7 @@ router.patch("/accounts/:id/status-override", async (_req: Request, res: Respons
+ 
+ /** DELETE /accounts/:id — disabled; account deletion is not authorized. */
+ router.delete("/accounts/:id", async (_req: Request, res: Response) => {
+-  res.status(403).json({ error: ACCOUNT_OPS_DISABLED, code: "ACCOUNT_OPS_DISABLED" });
++  res.status(403).json({ error: ACCOUNT_DELETE_DISABLED, code: "ACCOUNT_OPS_DISABLED" });
+ });
+ 
+ export default router;
+diff --git a/artifacts/api-server/src/services/account/index.ts b/artifacts/api-server/src/services/account/index.ts
+index 8ce4d50..d2d3e03 100644
+--- a/artifacts/api-server/src/services/account/index.ts
++++ b/artifacts/api-server/src/services/account/index.ts
+@@ -3,14 +3,13 @@ import {
+   accountsTable,
+   accountCapacitiesTable,
+   accountBackupCodesTable,
+-  capacityCustomersTable,
+   gameAccountSequencesTable,
+   gamesTable,
+   type Account,
+   type Game,
+   type InsertAccount,
+ } from "@workspace/db";
+-import { eq, and, isNull, sql, ne, inArray } from "drizzle-orm";
++import { eq, and, isNull, sql, ne } from "drizzle-orm";
+ import { z } from "zod";
+ import {
+   buildCapacityDefinitions,
+@@ -65,6 +64,14 @@ export class AccountHasAssignmentHistoryError extends AccountDomainError {
+   }
+ }
+ 
++export class AccountDeleteNotAvailableError extends AccountDomainError {
++  constructor() {
++    super(
++      "Account deletion is not available until authoritative assignment history is implemented",
++    );
++  }
++}
++
+ export type CreateAccountResult =
+   | { kind: "created"; account: SafeAccount }
+   | { kind: "duplicate-warning"; duplicateFields: string[] };
+@@ -865,68 +872,28 @@ export const DeleteAccountInput = z
+ export type DeleteAccountInput = z.infer<typeof DeleteAccountInput>;
+ 
+ /**
+- * Hard-delete an Account when it has no Customer Assignment history.
++ * Account deletion is fail-closed.
+  *
+- * Assignment history means any capacity_customers row associated with any
+- * Capacity belonging to the Account, regardless of status or deletedAt. The
+- * operation locks the Account and its Capacities so a concurrent assignment
+- * insert cannot race past the history check.
+- *
+- * Child Capacities and Backup Codes are deleted explicitly because the schema
+- * foreign keys use ON DELETE NO ACTION.
++ * Hard deletion is not available until an authoritative Assignment History model
++ * exists. The current capacity_customers table may prove the presence of historical
++ * usage, but its absence cannot prove the absence of Assignment history. Therefore,
++ * every valid Account deletion attempt returns ACCOUNT_DELETE_NOT_AVAILABLE and
++ * performs zero writes.
+  */
+ export async function deleteAccount(input: unknown): Promise<void> {
+   const parsed = DeleteAccountInput.parse(input);
+ 
+-  await db.transaction(async (tx) => {
+-    const client = tx as unknown as DbClient;
+-
+-    const [account] = await client
+-      .select()
+-      .from(accountsTable)
+-      .where(
+-        and(
+-          eq(accountsTable.id, parsed.accountId),
+-          isNull(accountsTable.deletedAt),
+-        ),
+-      )
+-      .limit(1)
+-      .for("update");
+-
+-    if (!account) {
+-      throw new AccountNotFoundError();
+-    }
+-
+-    // Lock every Capacity belonging to this Account so a concurrent assignment
+-    // insert is serialized after the delete transaction. PostgreSQL FK checks on
+-    // the assignment row will wait for these row locks; once the Account and its
+-    // Capacities are deleted, the FK check fails and the assignment cannot be
+-    // created.
+-    const capacities = await client
+-      .select()
+-      .from(accountCapacitiesTable)
+-      .where(eq(accountCapacitiesTable.accountId, account.id))
+-      .for("update");
++  const [account] = await db
++    .select({ id: accountsTable.id })
++    .from(accountsTable)
++    .where(
++      and(eq(accountsTable.id, parsed.accountId), isNull(accountsTable.deletedAt)),
++    )
++    .limit(1);
+ 
+-    const capacityIds = capacities.map((c) => c.id);
+-    if (capacityIds.length > 0) {
+-      const [assignment] = await client
+-        .select({ id: capacityCustomersTable.id })
+-        .from(capacityCustomersTable)
+-        .where(inArray(capacityCustomersTable.capacityId, capacityIds))
+-        .limit(1);
+-      if (assignment) {
+-        throw new AccountHasAssignmentHistoryError();
+-      }
+-    }
++  if (!account) {
++    throw new AccountNotFoundError();
++  }
+ 
+-    // Explicit child deletion is required because the FKs are ON DELETE NO ACTION.
+-    await client
+-      .delete(accountBackupCodesTable)
+-      .where(eq(accountBackupCodesTable.accountId, account.id));
+-    await client
+-      .delete(accountCapacitiesTable)
+-      .where(eq(accountCapacitiesTable.accountId, account.id));
+-    await client.delete(accountsTable).where(eq(accountsTable.id, account.id));
+-  });
++  throw new AccountDeleteNotAvailableError();
+ }
+diff --git a/docs/CURRENT_PHASE.md b/docs/CURRENT_PHASE.md
+index fbdb49d..a2376a9 100644
+--- a/docs/CURRENT_PHASE.md
++++ b/docs/CURRENT_PHASE.md
+@@ -1,19 +1,21 @@
+ Current stage:
+ PS-03D5 — Account Mutation Implementation, Runtime Disabled
+ 
+-Previous completed sub-stage:
+-PS-03D5-5 — Delete Account Safety Boundary, Runtime Disabled
+-
+-Previous sub-stage status:
+-APPROVED_AND_CLOSED
+-
+ Current sub-stage:
+-PS-03D5-6 — Account Write Frontend, Runtime Disabled
++PS-03D5-5-F1 — Account Delete Fail-Closed Correction
+ 
+ Current status:
+-PS-03D5-6 — AWAITING COMMAND CENTER AUTHORIZATION TO START
++PS-03D5-5-F1 — CORRECTION COMPLETE, AWAITING SOURCE REVIEW
++
++Corrected parent sub-stage:
++PS-03D5-5 — Delete Account Safety Boundary, Runtime Disabled
++
++Parent sub-stage status:
++IMPLEMENTATION REQUIRES CONTROLLED CORRECTION
++NOT APPROVED
++NOT CLOSED UNTIL PS-03D5-5-F1 REVIEW
+ 
+ Next planned sub-stage:
+-PS-03D5-7 — Account Mutation Verification and PS-03D5 Closure
++PS-03D5-6 — Account Write Frontend, Runtime Disabled
+ 
+ Keep runtime activation deferred to PS-03D7.
+diff --git a/docs/DECISION_LOG.md b/docs/DECISION_LOG.md
+index 03cd60c..6b40d49 100644
+--- a/docs/DECISION_LOG.md
++++ b/docs/DECISION_LOG.md
+@@ -1301,3 +1301,77 @@ The `deleteAccount` transaction locks the Account and all its Capacities with `F
+ - PS-03D5-5 is approved and closed.
+ - PS-03D5 as a whole remains open; the next authorized sub-stage is PS-03D5-6 — Account Write Frontend, Runtime Disabled, awaiting Command Center authorization to start.
+ - Runtime activation of Account mutations remains deferred to PS-03D7.
++
++## 2026-07-19 — PS-03D5-5-F1 Account Delete Fail-Closed Correction
++
++### Command Center decision applied
++
++- Option B selected: Account hard deletion must remain fail-closed until an authoritative Assignment History model exists.
++- The current `capacity_customers` table is not authoritative.
++- Its meaning is one-directional:
++  - The presence of a row may prove some historical usage.
++  - The absence of rows cannot prove the absence of Assignment history.
++  - The absence of `capacity_customers` rows must never authorize Account hard deletion.
++- The future authoritative model is expected to involve Order, OrderItem, FulfillmentUnit, Assignment, and Assignment History, but those models are not designed or implemented in this correction.
++- Hard Delete will be reconsidered only in a future Orders / Assignment phase after the canonical Order, OrderItem, FulfillmentUnit, Assignment, Assignment History, migration, permission, and audit contracts are approved.
++- No speculative future phase number is assigned.
++
++### Corrected behavior
++
++- Public production `DELETE /api/accounts/{accountId}` returns HTTP 403 with code `ACCOUNT_OPS_DISABLED` and the exact message: "Account operations are currently disabled".
++- The real delete handler is not invoked by the public route, no validation is performed, and no database writes occur.
++- The internal test-mounted `deleteAccountHandler` validates the Account ID and returns HTTP 404 for missing or already-deleted Accounts.
++- For every existing valid Account, the internal handler returns HTTP 409 with code `ACCOUNT_DELETE_NOT_AVAILABLE` and the exact message: "Account deletion is not available until authoritative assignment history is implemented".
++- The internal delete path performs zero writes whether `capacity_customers` contains no rows, active rows, removed rows, cancelled rows, soft-deleted rows, or any current or historical form.
++- The response contains no secrets, no Customer IDs, no Capacity IDs, and no SQL or internal details.
++
++### Files changed
++
++- `lib/api-spec/openapi.yaml` — removed the successful 204 hard-delete response; the `DELETE /accounts/{accountId}` contract now documents 403 `ACCOUNT_OPS_DISABLED`, 409 `ACCOUNT_DELETE_NOT_AVAILABLE`, 400, 404, and 500.
++- `artifacts/api-server/src/services/account/index.ts` — removed the destructive `deleteAccount` transaction; the service now validates the Account ID and throws `AccountDeleteNotAvailableError`; `capacityCustomersTable` and `inArray` imports removed; `AccountDeleteNotAvailableError` added; `AccountHasAssignmentHistoryError` retained for historical documentation only.
++- `artifacts/api-server/src/routes/accounts.ts` — public DELETE route now returns the exact new 403 message; `deleteAccountHandler` maps `AccountDeleteNotAvailableError` to 409; `AccountHasAssignmentHistoryError` import removed.
++- `artifacts/api-server/src/routes/accounts.disabled.test.ts` — updated public DELETE 403 assertion to expect the new exact message.
++- `artifacts/api-server/src/routes/accounts.delete.test.ts` — rewritten to prove fail-closed behavior: 403 public route, 409 internal handler with zero writes for no history and for active/removed/cancelled/soft-deleted `capacity_customers` rows; removed obsolete hard-delete success, concurrency, identifier-reuse, and destructive trigger tests.
++- `artifacts/api-server/src/lib/account-contract.test.ts` — updated generated-code comment to reflect the removal of the 204 response.
++- `docs/CURRENT_PHASE.md` — status updated to PS-03D5-5-F1 CORRECTION COMPLETE, AWAITING SOURCE REVIEW; parent sub-stage marked as requiring controlled correction and not closed until F1 review.
++- `docs/DECISION_LOG.md` — this entry added.
++- `lib/api-client-react/src/generated/api.ts` — regenerated by Orval; `deleteAccount` return type is now `Promise<unknown>` because the contract no longer has a successful 204 body.
++
++### Database safety
++
++- No schema change, no new migration, and no foreign-key behavior change.
++- All automated tests use only the disposable local PostgreSQL test database.
++- The normal development database, Replit database, staging, and production are untouched.
++- `capacity_customers` schema, Account identifier allocation, Capacity templates, and Backup Code schema remain unchanged.
++
++### Validation results
++
++| Command | Exit | Result | Notes |
++|---|---|---|---|
++| `pnpm install --frozen-lockfile` | 0 | PASS | Lockfile up to date |
++| `pnpm --filter @workspace/api-spec run codegen` | 0 | PASS | OpenAPI valid, generated clients typecheck |
++| `pnpm run typecheck` | 0 | PASS | All workspace packages |
++| `pnpm --filter @workspace/api-server run typecheck` | 0 | PASS | API server only |
++| `pnpm --filter @workspace/api-server run test` | 0 | PASS | 139 tests, 0 failures |
++| `pnpm --filter @workspace/api-server run build` | 0 | PASS | esbuild bundle produced |
++| `pnpm --filter @workspace/db run test` | 0 | PASS | 16 tests, 0 failures |
++| `pnpm --filter @workspace/db run test:migrations` | 0 | PASS | 38 tests, 0 failures |
++| `pnpm --filter @workspace/playsyncer run test` | 0 | PASS | 47 tests, 0 failures |
++| `PORT=24351 BASE_PATH=/ pnpm --filter @workspace/playsyncer run build` | 0 | PASS | Production frontend build |
++| `git diff --check` | 0 | PASS | No whitespace errors |
++
++**Total automated tests: 240. Failures: 0.**
++
++### Deferred hardening
++
++MUST FIX BEFORE MUTATION ACTIVATION:
++
++- Online ID case-preservation and case-insensitive advisory-lock normalization.
++- Server-side error-log redaction for database parameters and sensitive internal details.
++
++### Stage boundary
++
++- PS-03D5-5-F1 is implemented and awaiting source review.
++- PS-03D5-5 is NOT closed until PS-03D5-5-F1 is reviewed and approved.
++- PS-03D5-6 — Account Write Frontend, Runtime Disabled is not started automatically.
++- Runtime activation of Account mutations remains deferred to PS-03D7.
+diff --git a/lib/api-client-react/src/generated/api.ts b/lib/api-client-react/src/generated/api.ts
+index 88233af..755afd5 100644
+--- a/lib/api-client-react/src/generated/api.ts
++++ b/lib/api-client-react/src/generated/api.ts
+@@ -901,15 +901,16 @@ export const getDeleteAccountUrl = (accountId: string,) => {
+ }
+ 
+ /**
+- * Hard-deletes an Account when it has no Customer Assignment history.
+- * Deletion is blocked when any capacity_customers record exists for any
+- * Capacity belonging to the Account. Child Capacities and Backup Codes are
+- * removed together atomically.
++ * Account deletion is fail-closed in the current PS-03 contract. The public
++ * production route returns 403 ACCOUNT_OPS_DISABLED. If the internal mutation
++ * handler is mounted, a valid existing Account returns 409
++ * ACCOUNT_DELETE_NOT_AVAILABLE because hard deletion requires an authoritative
++ * Assignment History model that does not yet exist.
+  * @summary Delete an account
+  */
+-export const deleteAccount = async (accountId: string, options?: RequestInit): Promise<void> => {
++export const deleteAccount = async (accountId: string, options?: RequestInit): Promise<unknown> => {
+ 
+-  return customFetch<void>(getDeleteAccountUrl(accountId),
++  return customFetch<unknown>(getDeleteAccountUrl(accountId),
+   {
+     ...options,
+     method: 'DELETE'
+diff --git a/lib/api-spec/openapi.yaml b/lib/api-spec/openapi.yaml
+index e835501..c7c49cb 100644
+--- a/lib/api-spec/openapi.yaml
++++ b/lib/api-spec/openapi.yaml
+@@ -444,10 +444,11 @@ paths:
+         - accounts
+       summary: Delete an account
+       description: |
+-        Hard-deletes an Account when it has no Customer Assignment history.
+-        Deletion is blocked when any capacity_customers record exists for any
+-        Capacity belonging to the Account. Child Capacities and Backup Codes are
+-        removed together atomically.
++        Account deletion is fail-closed in the current PS-03 contract. The public
++        production route returns 403 ACCOUNT_OPS_DISABLED. If the internal mutation
++        handler is mounted, a valid existing Account returns 409
++        ACCOUNT_DELETE_NOT_AVAILABLE because hard deletion requires an authoritative
++        Assignment History model that does not yet exist.
+       parameters:
+         - name: accountId
+           in: path
+@@ -456,8 +457,6 @@ paths:
+             type: string
+             format: uuid
+       responses:
+-        '204':
+-          description: Account deleted
+         '400':
+           description: Invalid UUID
+           content:
+@@ -477,7 +476,7 @@ paths:
+               schema:
+                 $ref: '#/components/schemas/StandardApiError'
+         '409':
+-          description: Account has assignment history and cannot be deleted
++          description: Account deletion is not available until authoritative assignment history is implemented
+           content:
+             application/json:
+               schema:
+diff --git a/lib/api-zod/src/generated/api.ts b/lib/api-zod/src/generated/api.ts
+index 6538bb1..e134bb7 100644
+--- a/lib/api-zod/src/generated/api.ts
++++ b/lib/api-zod/src/generated/api.ts
+@@ -321,10 +321,11 @@ export const UpdateAccountResponse = zod.object({
+ 
+ 
+ /**
+- * Hard-deletes an Account when it has no Customer Assignment history.
+- * Deletion is blocked when any capacity_customers record exists for any
+- * Capacity belonging to the Account. Child Capacities and Backup Codes are
+- * removed together atomically.
++ * Account deletion is fail-closed in the current PS-03 contract. The public
++ * production route returns 403 ACCOUNT_OPS_DISABLED. If the internal mutation
++ * handler is mounted, a valid existing Account returns 409
++ * ACCOUNT_DELETE_NOT_AVAILABLE because hard deletion requires an authoritative
++ * Assignment History model that does not yet exist.
+  * @summary Delete an account
+  */
+ export const DeleteAccountParams = zod.object({

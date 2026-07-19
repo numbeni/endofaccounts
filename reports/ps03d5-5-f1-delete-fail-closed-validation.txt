@@ -1,0 +1,18 @@
+Validation Results for PS-03D5-5-F1 — Account Delete Fail-Closed Correction
+
+| Command | Exit | PASS/FAIL | Notes |
+|---|---|---|---|
+| pnpm install --frozen-lockfile | 0 | PASS | Lockfile up to date |
+| pnpm --filter @workspace/api-spec run codegen | 0 | PASS | OpenAPI valid, generated clients typecheck |
+| pnpm run typecheck | 0 | PASS | All workspace packages |
+| pnpm --filter @workspace/api-server run typecheck | 0 | PASS | API server only |
+| pnpm --filter @workspace/api-server run test | 0 | PASS | 139 tests, 0 failures |
+| pnpm --filter @workspace/api-server run build | 0 | PASS | esbuild bundle produced |
+| pnpm --filter @workspace/db run test | 0 | PASS | 16 tests, 0 failures |
+| pnpm --filter @workspace/db run test:migrations | 0 | PASS | 38 tests, 0 failures |
+| pnpm --filter @workspace/playsyncer run test | 0 | PASS | 47 tests, 0 failures |
+| PORT=24351 BASE_PATH=/ pnpm --filter @workspace/playsyncer run build | 0 | PASS | Production frontend build |
+| git diff --check | 0 | PASS | No whitespace errors |
+
+Total automated tests: 240
+Total failures: 0

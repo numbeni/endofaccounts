@@ -1,0 +1,63 @@
+PS-03D5-4-F1 Validation Results
+=================================
+Date: 2026-07-19
+Node: v24.13.0 (restored from import-downgraded v20.20.0)
+
+Commands run in order:
+
+1. pnpm install --frozen-lockfile
+   EXIT: 0
+
+2. pnpm --filter @workspace/api-spec run codegen
+   EXIT: 0
+   Orval generated api-client-react and zod clients; lib TypeScript declarations built.
+
+3. pnpm run typecheck
+   EXIT: 0
+   All 4 artifact packages and scripts typecheck passed.
+
+4. pnpm --filter @workspace/api-server run typecheck
+   EXIT: 0
+
+5. pnpm --filter @workspace/api-server run test
+   EXIT: 0
+   Tests: 126
+   Suites: 9
+   Passed: 126
+   Failed: 0
+
+6. pnpm --filter @workspace/api-server run build
+   EXIT: 0
+   Bundle: dist/index.mjs (1.8mb), dist/pino-worker.mjs, dist/pino-file.mjs, dist/pino-pretty.mjs, dist/thread-stream-worker.mjs
+
+7. pnpm --filter @workspace/db run test
+   EXIT: 0
+   Tests: 16
+   Suites: 4
+   Passed: 16
+   Failed: 0
+
+8. pnpm --filter @workspace/db run test:migrations
+   EXIT: 0
+   Tests: 38
+   Suites: 2
+   Passed: 38
+   Failed: 0
+
+9. pnpm --filter @workspace/playsyncer run test
+   EXIT: 0
+   Test Files: 4 passed (4)
+   Tests: 47 passed (47)
+
+10. PORT=24351 BASE_PATH=/ pnpm --filter @workspace/playsyncer run build
+    EXIT: 0
+    Vite build completed; dist/public produced.
+
+11. git diff --check
+    EXIT: 0
+    No whitespace errors.
+
+Summary
+-------
+All 11 required validation commands passed with exit code 0.
+Total automated tests: 227 (126 api-server + 16 db + 38 db migrations + 47 playsyncer)

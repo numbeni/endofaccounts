@@ -1,0 +1,22 @@
+ M artifacts/api-server/src/lib/account-contract.test.ts
+ M artifacts/api-server/src/routes/accounts.ts
+ M artifacts/api-server/src/services/account/index.ts
+ M docs/CURRENT_PHASE.md
+ M docs/DECISION_LOG.md
+ M lib/api-client-react/src/generated/api.ts
+ M lib/api-spec/openapi.yaml
+ M lib/api-zod/src/generated/api.ts
+?? artifacts/api-server/src/routes/accounts.delete.test.ts
+?? attached_assets/Pasted-Continue-in-the-current-local-PlaySyncer-workspace-Star_1784466513530.txt
+?? reports/ps03d5-5-delete-safety-manifest.txt
+?? reports/ps03d5-5-delete-safety-validation.txt
+?? reports/ps03d5-5-delete-safety.diff
+ .../api-server/src/lib/account-contract.test.ts    | 21 ++++--
+ artifacts/api-server/src/routes/accounts.ts        | 37 ++++++++++
+ artifacts/api-server/src/services/account/index.ts | 84 +++++++++++++++++++++-
+ docs/CURRENT_PHASE.md                              | 12 +++-
+ docs/DECISION_LOG.md                               | 75 +++++++++++++++++++
+ lib/api-client-react/src/generated/api.ts          | 74 +++++++++++++++++++
+ lib/api-spec/openapi.yaml                          | 50 +++++++++++++
+ lib/api-zod/src/generated/api.ts                   | 14 ++++
+ 8 files changed, 358 insertions(+), 9 deletions(-)

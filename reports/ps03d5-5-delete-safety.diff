@@ -1,0 +1,508 @@
+diff --git a/artifacts/api-server/src/lib/account-contract.test.ts b/artifacts/api-server/src/lib/account-contract.test.ts
+index 307aaa1..1c04fcf 100644
+--- a/artifacts/api-server/src/lib/account-contract.test.ts
++++ b/artifacts/api-server/src/lib/account-contract.test.ts
+@@ -110,6 +110,9 @@ describe("Account OpenAPI contract", () => {
+       "DuplicateFieldName",
+       "StandardApiError",
+     ];
++    // DeleteAccount is not expected in the generated Zod schema file because the
++    // 204 response has no body, but the generated React client must still expose
++    // the operation and mutation hook.
+     for (const name of required) {
+       assert.ok(blocks.has(name), `expected generated schema ${name} to exist`);
+     }
+@@ -182,11 +185,19 @@ describe("Account OpenAPI contract", () => {
+         `expected generated Update/Status hook token ${token}`,
+       );
+     }
+-    const forbidden = [
++    const requiredDelete = [
+       "export const deleteAccount",
++      "export const useDeleteAccount",
++    ];
++    for (const token of requiredDelete) {
++      assert.ok(
++        hooks.includes(token),
++        `expected generated Delete Account hook token ${token}`,
++      );
++    }
++    const forbidden = [
+       "export const getAccountSecrets",
+       "export const getAccountBackupCodes",
+-      "export function useDeleteAccount",
+       "export function useGetAccountSecrets",
+       "export function useGetAccountBackupCodes",
+     ];
+@@ -233,15 +244,15 @@ describe("Account OpenAPI contract", () => {
+       "Backup Code Reveal path must not be in OpenAPI",
+     );
+     assert.ok(
+-      !openApi.includes("operationId: deleteAccount"),
+-      "deleteAccount operation must not be in OpenAPI",
++      openApi.includes("operationId: deleteAccount"),
++      "deleteAccount operation must be in OpenAPI",
+     );
+   });
+ 
+   it("does not allow the active frontend to import Account mutation hooks", () => {
+     const frontendSrc = path.resolve(root, "artifacts", "playsyncer", "src");
+     const output = execSync(
+-      `grep -R "useUpdateAccount\\|useSetAccountStatusOverride\\|updateAccount\\|setAccountStatusOverride" ${frontendSrc} || true`,
++      `grep -R "useUpdateAccount\\|useSetAccountStatusOverride\\|useDeleteAccount\\|updateAccount\\|setAccountStatusOverride\\|deleteAccount" ${frontendSrc} || true`,
+       { encoding: "utf-8" },
+     );
+     assert.strictEqual(
+diff --git a/artifacts/api-server/src/routes/accounts.ts b/artifacts/api-server/src/routes/accounts.ts
+index e6cd8eb..1ac47fd 100644
+--- a/artifacts/api-server/src/routes/accounts.ts
++++ b/artifacts/api-server/src/routes/accounts.ts
+@@ -33,11 +33,13 @@ import {
+   createAccount as createAccountService,
+   updateAccount as updateAccountService,
+   setAccountStatusOverride as setAccountStatusOverrideService,
++  deleteAccount as deleteAccountService,
+   GameNotFoundError,
+   InactiveGameError,
+   IdentifierConflictError,
+   EncryptionError,
+   AccountNotFoundError,
++  AccountHasAssignmentHistoryError,
+ } from "../services/account/index.ts";
+ 
+ const router: IRouter = Router();
+@@ -309,6 +311,41 @@ export async function setAccountStatusOverrideHandler(
+   }
+ }
+ 
++/**
++ * Delete Account HTTP handler.
++ *
++ * Exported but intentionally NOT mounted in the production router. The public
++ * DELETE /accounts/:accountId route remains disabled. Tests mount this handler
++ * in an isolated Express app to verify the contract and behavior.
++ */
++export async function deleteAccountHandler(
++  req: Request,
++  res: Response,
++  next: NextFunction,
++): Promise<void> {
++  try {
++    const accountId = p(req.params["id"]);
++    await deleteAccountService({ accountId });
++    res.status(204).send();
++  } catch (err) {
++    if (err instanceof AccountNotFoundError) {
++      next(new HttpError(404, PERSIAN.ACCOUNT_NOT_FOUND, "ACCOUNT_NOT_FOUND"));
++      return;
++    }
++    if (err instanceof AccountHasAssignmentHistoryError) {
++      next(
++        new HttpError(
++          409,
++          "Account has assignment history and cannot be deleted",
++          "ACCOUNT_HAS_ASSIGNMENT_HISTORY",
++        ),
++      );
++      return;
++    }
++    next(err);
++  }
++}
++
+ // ── Routes ──────────────────────────────────────────────────────────────────
+ 
+ /** GET /games/:gameId/accounts — list non-secret Account summaries for a Game. */
+diff --git a/artifacts/api-server/src/services/account/index.ts b/artifacts/api-server/src/services/account/index.ts
+index a7f038b..8ce4d50 100644
+--- a/artifacts/api-server/src/services/account/index.ts
++++ b/artifacts/api-server/src/services/account/index.ts
+@@ -3,13 +3,14 @@ import {
+   accountsTable,
+   accountCapacitiesTable,
+   accountBackupCodesTable,
++  capacityCustomersTable,
+   gameAccountSequencesTable,
+   gamesTable,
+   type Account,
+   type Game,
+   type InsertAccount,
+ } from "@workspace/db";
+-import { eq, and, isNull, sql, ne } from "drizzle-orm";
++import { eq, and, isNull, sql, ne, inArray } from "drizzle-orm";
+ import { z } from "zod";
+ import {
+   buildCapacityDefinitions,
+@@ -58,6 +59,12 @@ export class AccountNotFoundError extends AccountDomainError {
+   }
+ }
+ 
++export class AccountHasAssignmentHistoryError extends AccountDomainError {
++  constructor() {
++    super("Account has assignment history and cannot be deleted");
++  }
++}
++
+ export type CreateAccountResult =
+   | { kind: "created"; account: SafeAccount }
+   | { kind: "duplicate-warning"; duplicateFields: string[] };
+@@ -848,3 +855,78 @@ export async function setAccountStatusOverride(
+     };
+   });
+ }
++
++export const DeleteAccountInput = z
++  .object({
++    accountId: z.string().uuid(),
++  })
++  .strict();
++
++export type DeleteAccountInput = z.infer<typeof DeleteAccountInput>;
++
++/**
++ * Hard-delete an Account when it has no Customer Assignment history.
++ *
++ * Assignment history means any capacity_customers row associated with any
++ * Capacity belonging to the Account, regardless of status or deletedAt. The
++ * operation locks the Account and its Capacities so a concurrent assignment
++ * insert cannot race past the history check.
++ *
++ * Child Capacities and Backup Codes are deleted explicitly because the schema
++ * foreign keys use ON DELETE NO ACTION.
++ */
++export async function deleteAccount(input: unknown): Promise<void> {
++  const parsed = DeleteAccountInput.parse(input);
++
++  await db.transaction(async (tx) => {
++    const client = tx as unknown as DbClient;
++
++    const [account] = await client
++      .select()
++      .from(accountsTable)
++      .where(
++        and(
++          eq(accountsTable.id, parsed.accountId),
++          isNull(accountsTable.deletedAt),
++        ),
++      )
++      .limit(1)
++      .for("update");
++
++    if (!account) {
++      throw new AccountNotFoundError();
++    }
++
++    // Lock every Capacity belonging to this Account so a concurrent assignment
++    // insert is serialized after the delete transaction. PostgreSQL FK checks on
++    // the assignment row will wait for these row locks; once the Account and its
++    // Capacities are deleted, the FK check fails and the assignment cannot be
++    // created.
++    const capacities = await client
++      .select()
++      .from(accountCapacitiesTable)
++      .where(eq(accountCapacitiesTable.accountId, account.id))
++      .for("update");
++
++    const capacityIds = capacities.map((c) => c.id);
++    if (capacityIds.length > 0) {
++      const [assignment] = await client
++        .select({ id: capacityCustomersTable.id })
++        .from(capacityCustomersTable)
++        .where(inArray(capacityCustomersTable.capacityId, capacityIds))
++        .limit(1);
++      if (assignment) {
++        throw new AccountHasAssignmentHistoryError();
++      }
++    }
++
++    // Explicit child deletion is required because the FKs are ON DELETE NO ACTION.
++    await client
++      .delete(accountBackupCodesTable)
++      .where(eq(accountBackupCodesTable.accountId, account.id));
++    await client
++      .delete(accountCapacitiesTable)
++      .where(eq(accountCapacitiesTable.accountId, account.id));
++    await client.delete(accountsTable).where(eq(accountsTable.id, account.id));
++  });
++}
+diff --git a/docs/CURRENT_PHASE.md b/docs/CURRENT_PHASE.md
+index 6efe229..e40e93e 100644
+--- a/docs/CURRENT_PHASE.md
++++ b/docs/CURRENT_PHASE.md
+@@ -1,13 +1,19 @@
+ Current stage:
+ PS-03D5 — Account Mutation Implementation, Runtime Disabled
+ 
+-Current sub-stage:
++Previous completed sub-stage:
+ PS-03D5-4 — Update and Status Override Backend, Runtime Disabled
+ 
++Previous sub-stage status:
++ACCEPTED WITH DEFERRED CORRECTIONS
++
++Current sub-stage:
++PS-03D5-5 — Delete Account Safety Boundary, Runtime Disabled
++
+ Current status:
+-PS-03D5-4 — IMPLEMENTATION COMPLETE, AWAITING SOURCE REVIEW
++PS-03D5-5 — IMPLEMENTATION COMPLETE, AWAITING SOURCE REVIEW
+ 
+ Next planned sub-stage:
+-PS-03D5-5 — Delete Account Safety Boundary
++PS-03D5-6 — Account Write Frontend, Runtime Disabled
+ 
+ Keep runtime activation deferred to PS-03D7.
+diff --git a/docs/DECISION_LOG.md b/docs/DECISION_LOG.md
+index 0dfb75d..7c5aaf6 100644
+--- a/docs/DECISION_LOG.md
++++ b/docs/DECISION_LOG.md
+@@ -1217,3 +1217,78 @@ PS-03D5-3 — Create Account Backend, Runtime Disabled (awaiting Command Center
+ ### Next gate
+ 
+ PS-03D5-4 — Update and Status Override Backend, Runtime Disabled (awaiting Command Center authorization to start).
++
++## 2026-07-19 — PS-03D5-4 Accepted with Deferred Corrections
++
++PS-03D5-4 — Update and Status Override Backend, Runtime Disabled is accepted with deferred corrections.
++
++### Deferred corrections (MUST FIX BEFORE PS-03D7 MUTATION ACTIVATION)
++
++- Online ID case-preservation and case-insensitive advisory-lock normalization: the current implementation stores Online ID as entered but compares duplicates case-insensitively using SQL `LOWER()`. The deferred correction is to apply the same case-insensitive normalization to the PostgreSQL advisory-lock tokens used during duplicate detection, so identical Online IDs in different cases cannot race past each other.
++- Server-side error-log redaction for database parameters and sensitive internal details: unexpected errors must continue to return safe HTTP 500 responses, but server logs must also avoid emitting plaintext credentials, database parameter values, or full stack traces in production.
++
++These two items are classified as **MUST FIX BEFORE PS-03D7 MUTATION ACTIVATION**. They are not implemented in PS-03D5-5.
++
++### Stage boundary
++
++- PS-03D5-4 is closed as accepted with deferred corrections.
++- No reopening or patching of PS-03D5-4 occurred during PS-03D5-5.
++- Next authorized sub-stage: PS-03D5-5 — Delete Account Safety Boundary, Runtime Disabled.
++
++## 2026-07-19 — PS-03D5-5 Delete Account Safety Boundary, Runtime Disabled
++
++PS-03D5-5 — Delete Account Safety Boundary, Runtime Disabled is implemented and awaiting Command Center review.
++
++### Approved deletion rule implemented
++
++- An Account may be hard-deleted only when it has no Customer Assignment history.
++- Assignment history means any `capacity_customers` record associated with any `account_capacities` row belonging to the Account.
++- All historical forms are treated conservatively: active, removed, cancelled, and soft-deleted (`deleted_at IS NOT NULL`) rows in `capacity_customers` block deletion.
++- If assignment history exists, the API returns HTTP 409 with code `ACCOUNT_HAS_ASSIGNMENT_HISTORY` and the safe message: "Account has assignment history and cannot be deleted".
++- Blocked deletion performs zero writes: the Account, Capacities, Backup Codes, and statusOverride remain unchanged.
++- The implementation does not silently convert the Account to `INACTIVE`; the caller may use the existing Status Override endpoint separately.
++
++### Implementation details
++
++- OpenAPI: `DELETE /api/accounts/{accountId}` added with `operationId: deleteAccount`, responses 204, 400, 403, 404, 409, 500.
++- Service: `deleteAccount` in `artifacts/api-server/src/services/account/index.ts` runs inside a PostgreSQL transaction, locks the Account row with `FOR UPDATE`, locks all Account Capacities with `FOR UPDATE`, checks for any `capacity_customers` row, then explicitly deletes Backup Codes, Capacities, and the Account.
++- Handler: `deleteAccountHandler` exported from `artifacts/api-server/src/routes/accounts.ts` but intentionally not mounted in the production router.
++- Production route: `DELETE /api/accounts/:id` remains hard-disabled and returns 403 `ACCOUNT_OPS_DISABLED` before validation or writes.
++- Generated clients: `deleteAccount` and `useDeleteAccount` are generated by the existing Orval workflow; the active frontend does not import or invoke them.
++- Tests: `artifacts/api-server/src/routes/accounts.delete.test.ts` added, covering success, blocked by active/removed/soft-deleted/multiple-capacity assignments, validation, missing/deleted Account, database failure rollback, unexpected error redaction, unrelated-account isolation, identifier non-reuse, concurrency lock evidence, and direct service invocation. Existing disabled-route and contract tests are updated and preserved.
++
++### Race-safety mechanism
++
++The `deleteAccount` transaction locks the Account and all its Capacities with `FOR UPDATE`. A concurrent `capacity_customers` INSERT referencing a locked Capacity is serialized by PostgreSQL's foreign-key check and waits for the row lock. Once the Account and Capacities are deleted, the INSERT fails the foreign-key constraint. A deterministic trigger-based test demonstrates that assignment creation cannot race successfully past the deletion.
++
++### Database safety
++
++- No schema change, no new migration, and no foreign-key behavior change.
++- All automated tests use only the disposable local PostgreSQL test database.
++- The normal development database, Replit database, staging, and production are untouched.
++
++### Deferred hardening
++
++- Online ID case-preservation and advisory-lock normalization remain deferred to before PS-03D7.
++- Server-side error-log redaction remains deferred to before PS-03D7.
++- No Customer Assignment write logic, Account write frontend, Auth, RBAC, Audit, Secret Reveal, or Backup Code management was implemented.
++
++### Validation results
++
++- `pnpm install --frozen-lockfile` — PASS
++- `pnpm --filter @workspace/api-spec run codegen` — PASS
++- `pnpm run typecheck` — PASS
++- `pnpm --filter @workspace/api-server run typecheck` — PASS
++- `pnpm --filter @workspace/api-server run test` — PASS (exact counts reported in validation artifact)
++- `pnpm --filter @workspace/api-server run build` — PASS
++- `pnpm --filter @workspace/db run test` — PASS
++- `pnpm --filter @workspace/db run test:migrations` — PASS
++- `pnpm --filter @workspace/playsyncer run test` — PASS
++- `PORT=24351 BASE_PATH=/ pnpm --filter @workspace/playsyncer run build` — PASS
++- `git diff --check` — PASS
++
++### Stage boundary
++
++- PS-03D5-5 is not marked approved or closed; it is awaiting Command Center review.
++- Next planned sub-stage: PS-03D5-6 — Account Write Frontend, Runtime Disabled. PS-03D5-6 is not started automatically.
++- Runtime activation of Account mutations remains deferred to PS-03D7.
+diff --git a/lib/api-client-react/src/generated/api.ts b/lib/api-client-react/src/generated/api.ts
+index f9a8262..88233af 100644
+--- a/lib/api-client-react/src/generated/api.ts
++++ b/lib/api-client-react/src/generated/api.ts
+@@ -892,6 +892,80 @@ export const useUpdateAccount = <TError = ErrorType<StandardApiError | Duplicate
+       return useMutation(getUpdateAccountMutationOptions(options));
+     }
+ 
++export const getDeleteAccountUrl = (accountId: string,) => {
++
++
++
++
++  return `/api/accounts/${accountId}`
++}
++
++/**
++ * Hard-deletes an Account when it has no Customer Assignment history.
++ * Deletion is blocked when any capacity_customers record exists for any
++ * Capacity belonging to the Account. Child Capacities and Backup Codes are
++ * removed together atomically.
++ * @summary Delete an account
++ */
++export const deleteAccount = async (accountId: string, options?: RequestInit): Promise<void> => {
++
++  return customFetch<void>(getDeleteAccountUrl(accountId),
++  {
++    ...options,
++    method: 'DELETE'
++
++
++  }
++);}
++
++
++
++
++export const getDeleteAccountMutationOptions = <TError = ErrorType<StandardApiError>,
++    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAccount>>, TError,{accountId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
++): UseMutationOptions<Awaited<ReturnType<typeof deleteAccount>>, TError,{accountId: string}, TContext> => {
++
++const mutationKey = ['deleteAccount'];
++const {mutation: mutationOptions, request: requestOptions} = options ?
++      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
++      options
++      : {...options, mutation: {...options.mutation, mutationKey}}
++      : {mutation: { mutationKey, }, request: undefined};
++
++
++
++
++      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteAccount>>, {accountId: string}> = (props) => {
++          const {accountId} = props ?? {};
++
++          return  deleteAccount(accountId,requestOptions)
++        }
++
++
++
++
++
++
++  return  { mutationFn, ...mutationOptions }}
++
++    export type DeleteAccountMutationResult = NonNullable<Awaited<ReturnType<typeof deleteAccount>>>
++
++    export type DeleteAccountMutationError = ErrorType<StandardApiError>
++
++    /**
++ * @summary Delete an account
++ */
++export const useDeleteAccount = <TError = ErrorType<StandardApiError>,
++    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteAccount>>, TError,{accountId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
++ ): UseMutationResult<
++        Awaited<ReturnType<typeof deleteAccount>>,
++        TError,
++        {accountId: string},
++        TContext
++      > => {
++      return useMutation(getDeleteAccountMutationOptions(options));
++    }
++
+ export const getGetAccountCapacitiesUrl = (accountId: string,) => {
+ 
+ 
+diff --git a/lib/api-spec/openapi.yaml b/lib/api-spec/openapi.yaml
+index c7d9e20..e835501 100644
+--- a/lib/api-spec/openapi.yaml
++++ b/lib/api-spec/openapi.yaml
+@@ -438,6 +438,56 @@ paths:
+             application/json:
+               schema:
+                 $ref: '#/components/schemas/StandardApiError'
++    delete:
++      operationId: deleteAccount
++      tags:
++        - accounts
++      summary: Delete an account
++      description: |
++        Hard-deletes an Account when it has no Customer Assignment history.
++        Deletion is blocked when any capacity_customers record exists for any
++        Capacity belonging to the Account. Child Capacities and Backup Codes are
++        removed together atomically.
++      parameters:
++        - name: accountId
++          in: path
++          required: true
++          schema:
++            type: string
++            format: uuid
++      responses:
++        '204':
++          description: Account deleted
++        '400':
++          description: Invalid UUID
++          content:
++            application/json:
++              schema:
++                $ref: '#/components/schemas/StandardApiError'
++        '403':
++          description: Account operations disabled in the mounted runtime
++          content:
++            application/json:
++              schema:
++                $ref: '#/components/schemas/StandardApiError'
++        '404':
++          description: Account not found
++          content:
++            application/json:
++              schema:
++                $ref: '#/components/schemas/StandardApiError'
++        '409':
++          description: Account has assignment history and cannot be deleted
++          content:
++            application/json:
++              schema:
++                $ref: '#/components/schemas/StandardApiError'
++        '500':
++          description: Unexpected error
++          content:
++            application/json:
++              schema:
++                $ref: '#/components/schemas/StandardApiError'
+   /accounts/{accountId}/capacities:
+     get:
+       operationId: getAccountCapacities
+diff --git a/lib/api-zod/src/generated/api.ts b/lib/api-zod/src/generated/api.ts
+index c2d11f7..6538bb1 100644
+--- a/lib/api-zod/src/generated/api.ts
++++ b/lib/api-zod/src/generated/api.ts
+@@ -320,6 +320,20 @@ export const UpdateAccountResponse = zod.object({
+ })
+ 
+ 
++/**
++ * Hard-deletes an Account when it has no Customer Assignment history.
++ * Deletion is blocked when any capacity_customers record exists for any
++ * Capacity belonging to the Account. Child Capacities and Backup Codes are
++ * removed together atomically.
++ * @summary Delete an account
++ */
++export const DeleteAccountParams = zod.object({
++  "accountId": zod.coerce.string().uuid()
++})
++
++export const DeleteAccountResponse = zod.void()
++
++
+ /**
+  * Returns Capacity rows and derived Account status information required by the Account workspace.
+  * @summary Get account capacities

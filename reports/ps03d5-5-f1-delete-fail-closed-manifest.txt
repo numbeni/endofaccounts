@@ -1,0 +1,29 @@
+PS-03D5-5-F1 — Account Delete Fail-Closed Correction Manifest
+
+Modified source files (not yet committed):
+
+ M artifacts/api-server/src/lib/account-contract.test.ts
+ M artifacts/api-server/src/routes/accounts.delete.test.ts
+ M artifacts/api-server/src/routes/accounts.disabled.test.ts
+ M artifacts/api-server/src/routes/accounts.ts
+ M artifacts/api-server/src/services/account/index.ts
+ M docs/CURRENT_PHASE.md
+ M docs/DECISION_LOG.md
+ M lib/api-client-react/src/generated/api.ts
+ M lib/api-spec/openapi.yaml
+ M lib/api-zod/src/generated/api.ts
+
+Review deliverables (untracked, excluded from source commit):
+
+ ?? reports/ps03d5-5-f1-delete-fail-closed-report.md
+ ?? reports/ps03d5-5-f1-delete-fail-closed.diff
+ ?? reports/ps03d5-5-f1-delete-fail-closed-validation.txt
+ ?? reports/ps03d5-5-f1-delete-fail-closed-manifest.txt
+ ?? playsyncer-ps03d5-5-f1-delete-fail-closed-review.zip
+
+Excluded prompt artifact (not part of the review package):
+
+ ?? attached_assets/Pasted-Continue-in-the-current-local-PlaySyncer-workspace-Star_1784472588257.txt
+
+Do not commit this correction until source review is complete.
+PS-03D5-6 is not started automatically.
