@@ -1,0 +1,47 @@
+=== PS-03D5-6A-F1 MANIFEST ===
+Generated: 2026-07-19
+
+Feature files changed:
+artifacts/playsyncer/src/features/account-write/CreateAccountDialog.tsx
+artifacts/playsyncer/src/features/account-write/EditAccountDialog.tsx
+artifacts/playsyncer/src/features/account-write/DuplicateWarningDialog.tsx
+artifacts/playsyncer/src/features/account-write/StatusOverrideDialog.tsx
+artifacts/playsyncer/src/features/account-write/__tests__/CreateAccountDialog.test.tsx
+artifacts/playsyncer/src/features/account-write/__tests__/EditAccountDialog.test.tsx
+artifacts/playsyncer/src/features/account-write/__tests__/StatusOverrideDialog.test.tsx
+artifacts/playsyncer/src/features/account-write/__tests__/DuplicateWarningDialog.test.tsx (new)
+
+docs updated:
+docs/CURRENT_PHASE.md
+
+Report files:
+reports/ps03d5-6a-f1-execution-log.md
+reports/ps03d5-6a-f1-validation-full.txt
+reports/ps03d5-6a-f1.diff
+reports/ps03d5-6a-f1-manifest.txt
+
+Test counts:
+  CreateAccountDialog.test.tsx: 21
+  EditAccountDialog.test.tsx: 22
+  StatusOverrideDialog.test.tsx: 13
+  DuplicateWarningDialog.test.tsx: 6
+  DeleteUnavailableDialog.test.tsx: 7
+  isolation.test.tsx: 6
+  parseApiError.test.ts: 17
+  validateBirthDate.test.ts: 22
+  TOTAL FEATURE TESTS: 114
+  TOTAL PASSING: 161/161
+
+ZIP package:
+  Filename: playsyncer-ps03d5-6a-f1-account-write-core-review.zip
+  Size: 908681 bytes
+  SHA-256: 277aeb671959a6e91880eb46a8a712dddfd4dc21fbdca827cb3f7d738ef2d6df
+  Entry count: 465 OK entries
+  unzip -t: No errors detected in compressed data
+  file: Zip archive data, at least v2.0 to extract, compression method=deflate
+  Root package.json: present
+  pnpm-lock.yaml: present
+  lib/: present
+  artifacts/: present
+  docs/: present (including docs/CURRENT_PHASE.md)
+  Excluded: .git, node_modules, dist, build, coverage, .env, attached_assets/Pasted-*, .zip files, .agents, .local

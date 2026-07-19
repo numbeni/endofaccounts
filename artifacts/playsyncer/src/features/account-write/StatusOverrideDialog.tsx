@@ -10,7 +10,7 @@
  * - Does NOT require currentOverride — the safe DTO does not expose it.
  * - Does NOT claim whether the current status is manually overridden.
  */
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSetAccountStatusOverride } from "@workspace/api-client-react";
 import { parseMutationError, safeMutationErrorMessage } from "./parseApiError";
 
@@ -27,17 +27,17 @@ const OVERRIDE_OPTIONS: { value: OverrideChoice; label: string; description: str
   {
     value: "SOLD",
     label: "فروخته‌شده",
-    description: "اکانت را به‌عنوان فروخته‌شده علامت‌گذاری می‌کند",
+    description: "اکانت به‌صورت دستی فروخته‌شده در نظر گرفته می‌شود",
   },
   {
     value: "INACTIVE",
     label: "غیرفعال",
-    description: "اکانت را از چرخه فروش خارج می‌کند",
+    description: "اکانت از چرخه استفاده و فروش خارج می‌شود",
   },
   {
     value: null,
     label: "پاک‌کردن وضعیت دستی",
-    description: "وضعیت مبتنی بر ظرفیت را بازیابی می‌کند",
+    description: "وضعیت دوباره از اطلاعات معتبر سیستم محاسبه می‌شود",
   },
 ];
 
@@ -47,9 +47,16 @@ export function StatusOverrideDialog({ open, accountId, onSuccess, onClose }: Pr
 
   const mutation = useSetAccountStatusOverride();
 
+  // Reset state when the dialog closes externally or reopens.
+  useEffect(() => {
+    if (!open) {
+      setSelected(undefined);
+      setErrorMsg(null);
+    }
+  }, [open]);
+
   const handleClose = () => {
-    setSelected(undefined);
-    setErrorMsg(null);
+    // External close triggers the useEffect reset above.
     onClose();
   };
 

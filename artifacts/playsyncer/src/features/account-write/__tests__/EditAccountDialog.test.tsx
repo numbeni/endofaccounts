@@ -306,6 +306,121 @@ describe("EditAccountDialog", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  // ── Password contract (PS-03D5-6A-F1) ───────────────────────────────────
+
+  it("preserves leading and trailing spaces in optional passwords exactly", async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({ account: {} });
+    vi.mocked(useUpdateAccount).mockReturnValue(makeMutation(mutateAsync));
+    const user = userEvent.setup();
+    render(
+      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    // psnPassword with leading/trailing spaces
+    const psnPasswordInput = screen.getAllByPlaceholderText(/خالی = بدون تغییر/)[1] as HTMLInputElement;
+    await user.type(psnPasswordInput, "  NewPsnPass  ");
+    fireEvent.click(screen.getByText("ذخیره تغییرات"));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
+    const payload = mutateAsync.mock.calls[0][0].data;
+    expect(payload.psnPassword).toBe("  NewPsnPass  ");
+    // Empty email password must be omitted exactly
+    expect(payload.emailPassword).toBeUndefined();
+  });
+
+  it("omits optional passwords only when their exact value is empty", async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({ account: {} });
+    vi.mocked(useUpdateAccount).mockReturnValue(makeMutation(mutateAsync));
+    const user = userEvent.setup();
+    render(
+      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    // Type psnPassword and leave emailPassword empty
+    const psnPasswordInput = screen.getAllByPlaceholderText(/خالی = بدون تغییر/)[1] as HTMLInputElement;
+    await user.type(psnPasswordInput, "only-psn-pass");
+    fireEvent.click(screen.getByText("ذخیره تغییرات"));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
+    const payload = mutateAsync.mock.calls[0][0].data;
+    expect(payload.psnPassword).toBe("only-psn-pass");
+    expect(payload.emailPassword).toBeUndefined();
+    expect(payload.familyManagementEmail).toBeUndefined();
+  });
+
+  // ── Empty safe-DTO fields (PS-03D5-6A-F1) ─────────────────────────────────
+
+  it("shows validation error when onlineId is cleared from an existing value", async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({ account: {} });
+    vi.mocked(useUpdateAccount).mockReturnValue(makeMutation(mutateAsync));
+    const user = userEvent.setup();
+    render(
+      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    const onlineIdInput = screen.getByPlaceholderText("PSN username") as HTMLInputElement;
+    await user.clear(onlineIdInput);
+    fireEvent.click(screen.getByText("ذخیره تغییرات"));
+    await waitFor(() =>
+      expect(screen.getByText("Online ID نمی‌تواند خالی باشد")).toBeInTheDocument(),
+    );
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("shows validation error when birthDate is cleared from an existing value", async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({ account: {} });
+    vi.mocked(useUpdateAccount).mockReturnValue(makeMutation(mutateAsync));
+    const user = userEvent.setup();
+    render(
+      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    const birthDateInput = screen.getByPlaceholderText("1990-08-27") as HTMLInputElement;
+    await user.clear(birthDateInput);
+    fireEvent.click(screen.getByText("ذخیره تغییرات"));
+    await waitFor(() =>
+      expect(screen.getByText("تاریخ تولد نمی‌تواند خالی باشد")).toBeInTheDocument(),
+    );
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("does not construct payload properties with undefined when safe-DTO fields are cleared", async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({ account: {} });
+    vi.mocked(useUpdateAccount).mockReturnValue(makeMutation(mutateAsync));
+    const user = userEvent.setup();
+    render(
+      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    // Clear both safe-DTO fields and a password — validation must block, not send undefined.
+    const onlineIdInput = screen.getByPlaceholderText("PSN username") as HTMLInputElement;
+    const birthDateInput = screen.getByPlaceholderText("1990-08-27") as HTMLInputElement;
+    await user.clear(onlineIdInput);
+    await user.clear(birthDateInput);
+    const psnPasswordInput = screen.getAllByPlaceholderText(/خالی = بدون تغییر/)[1] as HTMLInputElement;
+    await user.type(psnPasswordInput, "psn123");
+    fireEvent.click(screen.getByText("ذخیره تغییرات"));
+    await waitFor(() =>
+      expect(screen.getByText("Online ID نمی‌تواند خالی باشد")).toBeInTheDocument(),
+    );
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("submits valid changed onlineId and birthDate normally", async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({ account: {} });
+    vi.mocked(useUpdateAccount).mockReturnValue(makeMutation(mutateAsync));
+    const user = userEvent.setup();
+    render(
+      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    const onlineIdInput = screen.getByPlaceholderText("PSN username") as HTMLInputElement;
+    const birthDateInput = screen.getByPlaceholderText("1990-08-27") as HTMLInputElement;
+    await user.clear(onlineIdInput);
+    await user.type(onlineIdInput, "new_online_id");
+    await user.clear(birthDateInput);
+    await user.type(birthDateInput, "1995-05-20");
+    fireEvent.click(screen.getByText("ذخیره تغییرات"));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
+    const payload = mutateAsync.mock.calls[0][0].data;
+    expect(payload.onlineId).toBe("new_online_id");
+    expect(payload.birthDate).toBe("1995-05-20");
+    // No undefined properties in the payload
+    expect(Object.values(payload).some((v) => v === undefined)).toBe(false);
+  });
+
   it("does not render when account is null", () => {
     render(
       <EditAccountDialog open account={null} onSuccess={vi.fn()} onClose={vi.fn()} />,

@@ -12,6 +12,8 @@
  */
 import { DUPLICATE_FIELD_LABELS } from "./parseApiError";
 
+const GENERIC_FIELD_LABEL = "فیلد مشابه";
+
 interface Props {
   open: boolean;
   duplicateFields: string[];
@@ -57,12 +59,16 @@ export function DuplicateWarningDialog({
 
           {duplicateFields.length > 0 && (
             <ul className="mt-3 space-y-1 rounded-xl border border-border bg-muted/40 px-4 py-3">
-              {duplicateFields.map((field) => (
-                <li key={field} className="text-sm font-medium text-foreground">
-                  {/* Safe: only display Persian label — never the field value or Account ID */}
-                  {DUPLICATE_FIELD_LABELS[field] ?? field}
-                </li>
-              ))}
+              {duplicateFields.map((field) => {
+                // Unknown internal field names must never be rendered raw.
+                const label = DUPLICATE_FIELD_LABELS[field] ?? GENERIC_FIELD_LABEL;
+                return (
+                  <li key={field} className="text-sm font-medium text-foreground">
+                    {/* Safe: only display Persian label — never the field value or Account ID */}
+                    {label}
+                  </li>
+                );
+              })}
             </ul>
           )}
 

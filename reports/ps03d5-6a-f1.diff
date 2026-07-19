@@ -1,0 +1,597 @@
+diff --git a/artifacts/playsyncer/src/features/account-write/CreateAccountDialog.tsx b/artifacts/playsyncer/src/features/account-write/CreateAccountDialog.tsx
+index 0903ceb..cc036a9 100644
+--- a/artifacts/playsyncer/src/features/account-write/CreateAccountDialog.tsx
++++ b/artifacts/playsyncer/src/features/account-write/CreateAccountDialog.tsx
+@@ -57,13 +57,8 @@ type FieldErrors = Partial<
+ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+ const isValidEmail = (v: string) => EMAIL_RE.test(v.trim());
+ 
+-/** Clear only sensitive fields — called on success and every close path. */
+-function emptySensitive() {
+-  return {
+-    psnPassword: "",
+-    backupCodes: [""],
+-  };
+-}
++/** Non-empty if length > 0, preserving leading/trailing spaces exactly. */
++const isNonEmpty = (v: string) => v.length > 0;
+ 
+ export function CreateAccountDialog({ open, gameId, onSuccess, onClose }: Props) {
+   const [psnEmail, setPsnEmail] = useState("");
+@@ -94,9 +89,9 @@ export function CreateAccountDialog({ open, gameId, onSuccess, onClose }: Props)
+   const mutation = useCreateAccount();
+ 
+   const clearSensitive = () => {
+-    const s = emptySensitive();
+-    setPsnPassword(s.psnPassword);
+-    setBackupCodes(s.backupCodes);
++    setPsnPassword("");
++    setEmailPassword("");
++    setBackupCodes([""]);
+   };
+ 
+   const resetAll = () => {
+@@ -115,7 +110,14 @@ export function CreateAccountDialog({ open, gameId, onSuccess, onClose }: Props)
+   };
+ 
+   useEffect(() => {
+-    if (open) {
++    if (!open) {
++      // External close: immediately clear secrets, pending duplicate state, and duplicate-warning dialog.
++      clearSensitive();
++      setShowDuplicate(false);
++      setDuplicateFields([]);
++      pendingPayloadRef.current = null;
++      confirmedOnceRef.current = false;
++    } else {
+       resetAll();
+     }
+   }, [open]);
+@@ -131,8 +133,7 @@ export function CreateAccountDialog({ open, gameId, onSuccess, onClose }: Props)
+   }, [open, showDuplicate]);
+ 
+   const handleClose = () => {
+-    clearSensitive();
+-    resetAll();
++    // Close button triggers the same external-close cleanup via the useEffect on open=false.
+     onClose();
+   };
+ 
+@@ -143,8 +144,8 @@ export function CreateAccountDialog({ open, gameId, onSuccess, onClose }: Props)
+     } else if (!isValidEmail(psnEmail)) {
+       errs.psnEmail = "فرمت ایمیل PSN صحیح نیست";
+     }
+-    if (!psnPassword.trim()) errs.psnPassword = "رمز عبور PSN الزامی است";
+-    if (!emailPassword.trim()) errs.emailPassword = "رمز ایمیل الزامی است";
++    if (!isNonEmpty(psnPassword)) errs.psnPassword = "رمز عبور PSN الزامی است";
++    if (!isNonEmpty(emailPassword)) errs.emailPassword = "رمز ایمیل الزامی است";
+     if (!onlineId.trim()) errs.onlineId = "Online ID الزامی است";
+     if (!birthDate.trim()) {
+       errs.birthDate = "تاریخ تولد الزامی است";
+@@ -166,8 +167,8 @@ export function CreateAccountDialog({ open, gameId, onSuccess, onClose }: Props)
+ 
+   const buildPayload = () => ({
+     psnEmail: psnEmail.trim(),
+-    psnPassword: psnPassword.trim(),
+-    emailPassword: emailPassword.trim(),
++    psnPassword: psnPassword,
++    emailPassword: emailPassword,
+     onlineId: onlineId.trim(),
+     birthDate: birthDate.trim(),
+     familyManagementEmail: familyManagementEmail.trim(),
+@@ -323,7 +324,7 @@ export function CreateAccountDialog({ open, gameId, onSuccess, onClose }: Props)
+ 
+               <FormField label="رمز عبور PSN" required error={errors.psnPassword}>
+                 <input
+-                  type="text"
++                  type="password"
+                   dir="ltr"
+                   value={psnPassword}
+                   onChange={(e) => {
+@@ -341,7 +342,7 @@ export function CreateAccountDialog({ open, gameId, onSuccess, onClose }: Props)
+ 
+               <FormField label="رمز ایمیل" required error={errors.emailPassword}>
+                 <input
+-                  type="text"
++                  type="password"
+                   dir="ltr"
+                   value={emailPassword}
+                   onChange={(e) => {
+diff --git a/artifacts/playsyncer/src/features/account-write/DuplicateWarningDialog.tsx b/artifacts/playsyncer/src/features/account-write/DuplicateWarningDialog.tsx
+index f62f1cc..47379c6 100644
+--- a/artifacts/playsyncer/src/features/account-write/DuplicateWarningDialog.tsx
++++ b/artifacts/playsyncer/src/features/account-write/DuplicateWarningDialog.tsx
+@@ -12,6 +12,8 @@
+  */
+ import { DUPLICATE_FIELD_LABELS } from "./parseApiError";
+ 
++const GENERIC_FIELD_LABEL = "فیلد مشابه";
++
+ interface Props {
+   open: boolean;
+   duplicateFields: string[];
+@@ -57,12 +59,16 @@ export function DuplicateWarningDialog({
+ 
+           {duplicateFields.length > 0 && (
+             <ul className="mt-3 space-y-1 rounded-xl border border-border bg-muted/40 px-4 py-3">
+-              {duplicateFields.map((field) => (
+-                <li key={field} className="text-sm font-medium text-foreground">
+-                  {/* Safe: only display Persian label — never the field value or Account ID */}
+-                  {DUPLICATE_FIELD_LABELS[field] ?? field}
+-                </li>
+-              ))}
++              {duplicateFields.map((field) => {
++                // Unknown internal field names must never be rendered raw.
++                const label = DUPLICATE_FIELD_LABELS[field] ?? GENERIC_FIELD_LABEL;
++                return (
++                  <li key={field} className="text-sm font-medium text-foreground">
++                    {/* Safe: only display Persian label — never the field value or Account ID */}
++                    {label}
++                  </li>
++                );
++              })}
+             </ul>
+           )}
+ 
+diff --git a/artifacts/playsyncer/src/features/account-write/EditAccountDialog.tsx b/artifacts/playsyncer/src/features/account-write/EditAccountDialog.tsx
+index 90b63ac..c94250f 100644
+--- a/artifacts/playsyncer/src/features/account-write/EditAccountDialog.tsx
++++ b/artifacts/playsyncer/src/features/account-write/EditAccountDialog.tsx
+@@ -124,12 +124,17 @@ export function EditAccountDialog({ open, account, onSuccess, onClose }: Props)
+     if (open) {
+       initState(account);
+     } else {
+-      // Clear sensitive values when closed externally (open=false).
++      // External close: clear selected action, previous error, and sensitive values.
+       const s = emptySensitive();
+       setPsnEmail(s.psnEmail);
+       setPsnPassword(s.psnPassword);
+       setEmailPassword(s.emailPassword);
+       setFamilyManagementEmail(s.familyManagementEmail);
++      setShowDuplicate(false);
++      setDuplicateFields([]);
++      pendingPayloadRef.current = null;
++      confirmedOnceRef.current = false;
++      setErrors({});
+     }
+   }, [open, account?.id]);
+ 
+@@ -143,21 +148,8 @@ export function EditAccountDialog({ open, account, onSuccess, onClose }: Props)
+     return () => document.removeEventListener("keydown", handler);
+   }, [open, showDuplicate]);
+ 
+-  const clearSensitiveAndClose = () => {
+-    const s = emptySensitive();
+-    setPsnEmail(s.psnEmail);
+-    setPsnPassword(s.psnPassword);
+-    setEmailPassword(s.emailPassword);
+-    setFamilyManagementEmail(s.familyManagementEmail);
+-    setShowDuplicate(false);
+-    setDuplicateFields([]);
+-    pendingPayloadRef.current = null;
+-    confirmedOnceRef.current = false;
+-    setErrors({});
+-  };
+-
+   const handleClose = () => {
+-    clearSensitiveAndClose();
++    // Let the useEffect on open=false handle clearing.
+     onClose();
+   };
+ 
+@@ -166,16 +158,30 @@ export function EditAccountDialog({ open, account, onSuccess, onClose }: Props)
+     const payload: UpdateAccountRequest = {};
+ 
+     // Fields not in safe DTO — include if non-empty (user intent to change).
+-    if (psnEmail.trim()) payload.psnEmail = psnEmail.trim();
+-    if (psnPassword.trim()) payload.psnPassword = psnPassword.trim();
+-    if (emailPassword.trim()) payload.emailPassword = emailPassword.trim();
+-    if (familyManagementEmail.trim()) payload.familyManagementEmail = familyManagementEmail.trim();
++    // Exact empty string means "no change"; preserve non-empty values exactly.
++    if (psnEmail.length > 0) payload.psnEmail = psnEmail;
++    if (psnPassword.length > 0) payload.psnPassword = psnPassword;
++    if (emailPassword.length > 0) payload.emailPassword = emailPassword;
++    if (familyManagementEmail.length > 0) payload.familyManagementEmail = familyManagementEmail;
+ 
+     // Fields in safe DTO — include if different from current value.
+     const currentOnlineId = account?.onlineId ?? "";
+     const currentBirthDate = account?.birthDate ?? "";
+-    if (onlineId.trim() !== currentOnlineId) payload.onlineId = onlineId.trim() || undefined;
+-    if (birthDate.trim() !== currentBirthDate) payload.birthDate = birthDate.trim() || undefined;
++    if (onlineId.trim() !== currentOnlineId) {
++      // If the user clears an existing value, it is a validation error — not a payload update.
++      if (!onlineId.trim()) {
++        // Caller should validate first; this branch is defensive.
++      } else {
++        payload.onlineId = onlineId.trim();
++      }
++    }
++    if (birthDate.trim() !== currentBirthDate) {
++      if (!birthDate.trim()) {
++        // Defensive: empty DTO field should be rejected by validate(), never sent as undefined.
++      } else {
++        payload.birthDate = birthDate.trim();
++      }
++    }
+ 
+     return payload;
+   };
+@@ -191,9 +197,16 @@ export function EditAccountDialog({ open, account, onSuccess, onClose }: Props)
+     if (birthDate.trim() && !isValidBirthDate(birthDate)) {
+       errs.birthDate = "فرمت باید YYYY-MM-DD باشد و تاریخ واقعی گریگوری باشد";
+     }
++    // If the user clears an existing safe-DTO value, block submission.
++    if (account?.onlineId && !onlineId.trim()) {
++      errs.onlineId = "Online ID نمی‌تواند خالی باشد";
++    }
++    if (account?.birthDate && !birthDate.trim()) {
++      errs.birthDate = "تاریخ تولد نمی‌تواند خالی باشد";
++    }
+     const changed = buildChangedPayload();
+     const hasChanges = Object.keys(changed).length > 0;
+-    if (!hasChanges) {
++    if (!hasChanges && Object.keys(errs).length === 0) {
+       errs.noChanges = "هیچ تغییری وارد نشده است";
+     }
+     setErrors(errs);
+@@ -214,7 +227,8 @@ export function EditAccountDialog({ open, account, onSuccess, onClose }: Props)
+ 
+     try {
+       await mutation.mutateAsync({ accountId: account.id, data: payload });
+-      clearSensitiveAndClose();
++      // Success: parent closes the dialog (open=false triggers useEffect cleanup).
++      handleClose();
+       onSuccess();
+     } catch (err) {
+       const parsed = parseMutationError(err);
+@@ -238,7 +252,8 @@ export function EditAccountDialog({ open, account, onSuccess, onClose }: Props)
+         accountId: account.id,
+         data: { ...pendingPayloadRef.current, confirmed: true },
+       });
+-      clearSensitiveAndClose();
++      // Success: parent closes the dialog (open=false triggers useEffect cleanup).
++      handleClose();
+       onSuccess();
+     } catch (err) {
+       const parsed = parseMutationError(err);
+@@ -347,7 +362,7 @@ export function EditAccountDialog({ open, account, onSuccess, onClose }: Props)
+               <FormField label="رمز عبور PSN" hint="خالی بگذارید تا تغییر نکند">
+                 {/* Never prefilled */}
+                 <input
+-                  type="text"
++                  type="password"
+                   dir="ltr"
+                   value={psnPassword}
+                   onChange={(e) => setPsnPassword(e.target.value)}
+@@ -360,7 +375,7 @@ export function EditAccountDialog({ open, account, onSuccess, onClose }: Props)
+               <FormField label="رمز ایمیل" hint="خالی بگذارید تا تغییر نکند">
+                 {/* Never prefilled */}
+                 <input
+-                  type="text"
++                  type="password"
+                   dir="ltr"
+                   value={emailPassword}
+                   onChange={(e) => setEmailPassword(e.target.value)}
+diff --git a/artifacts/playsyncer/src/features/account-write/StatusOverrideDialog.tsx b/artifacts/playsyncer/src/features/account-write/StatusOverrideDialog.tsx
+index 2839555..581336e 100644
+--- a/artifacts/playsyncer/src/features/account-write/StatusOverrideDialog.tsx
++++ b/artifacts/playsyncer/src/features/account-write/StatusOverrideDialog.tsx
+@@ -10,7 +10,7 @@
+  * - Does NOT require currentOverride — the safe DTO does not expose it.
+  * - Does NOT claim whether the current status is manually overridden.
+  */
+-import { useState } from "react";
++import { useState, useEffect } from "react";
+ import { useSetAccountStatusOverride } from "@workspace/api-client-react";
+ import { parseMutationError, safeMutationErrorMessage } from "./parseApiError";
+ 
+@@ -27,17 +27,17 @@ const OVERRIDE_OPTIONS: { value: OverrideChoice; label: string; description: str
+   {
+     value: "SOLD",
+     label: "فروخته‌شده",
+-    description: "اکانت را به‌عنوان فروخته‌شده علامت‌گذاری می‌کند",
++    description: "اکانت به‌صورت دستی فروخته‌شده در نظر گرفته می‌شود",
+   },
+   {
+     value: "INACTIVE",
+     label: "غیرفعال",
+-    description: "اکانت را از چرخه فروش خارج می‌کند",
++    description: "اکانت از چرخه استفاده و فروش خارج می‌شود",
+   },
+   {
+     value: null,
+     label: "پاک‌کردن وضعیت دستی",
+-    description: "وضعیت مبتنی بر ظرفیت را بازیابی می‌کند",
++    description: "وضعیت دوباره از اطلاعات معتبر سیستم محاسبه می‌شود",
+   },
+ ];
+ 
+@@ -47,9 +47,16 @@ export function StatusOverrideDialog({ open, accountId, onSuccess, onClose }: Pr
+ 
+   const mutation = useSetAccountStatusOverride();
+ 
++  // Reset state when the dialog closes externally or reopens.
++  useEffect(() => {
++    if (!open) {
++      setSelected(undefined);
++      setErrorMsg(null);
++    }
++  }, [open]);
++
+   const handleClose = () => {
+-    setSelected(undefined);
+-    setErrorMsg(null);
++    // External close triggers the useEffect reset above.
+     onClose();
+   };
+ 
+diff --git a/artifacts/playsyncer/src/features/account-write/__tests__/CreateAccountDialog.test.tsx b/artifacts/playsyncer/src/features/account-write/__tests__/CreateAccountDialog.test.tsx
+index 0893027..2d97b80 100644
+--- a/artifacts/playsyncer/src/features/account-write/__tests__/CreateAccountDialog.test.tsx
++++ b/artifacts/playsyncer/src/features/account-write/__tests__/CreateAccountDialog.test.tsx
+@@ -379,6 +379,71 @@ describe("CreateAccountDialog", () => {
+     expect(codeInput.value).toBe("");
+   });
+ 
++  // ── Password contract (PS-03D5-6A-F1) ───────────────────────────────────
++
++  it("preserves leading and trailing spaces in passwords exactly", async () => {
++    const mutateAsync = vi.fn().mockResolvedValue({ account: {} });
++    vi.mocked(useCreateAccount).mockReturnValue(makeMutation(mutateAsync));
++    const user = userEvent.setup();
++    render(
++      <CreateAccountDialog open gameId={gameId} onSuccess={vi.fn()} onClose={vi.fn()} />,
++    );
++    // Passwords with leading/trailing spaces must be preserved exactly.
++    const psnPass = "  SecurePass123  ";
++    const emailPass = "  EmailPass456  ";
++    const psnPassInput = screen.getAllByPlaceholderText(/PlayStation password/i)[0] as HTMLInputElement;
++    await user.type(psnPassInput, psnPass);
++    await user.type(screen.getByPlaceholderText("Email password"), emailPass);
++    // Fill remaining required fields so validation does not block submit
++    await user.type(screen.getByPlaceholderText("example@playstation.com"), "test@psn.com");
++    await user.type(screen.getByPlaceholderText("PSN username"), "my_psn_user");
++    await user.type(screen.getByPlaceholderText("1990-08-27"), "1990-08-27");
++    await user.type(screen.getByPlaceholderText("family@email.com"), "family@test.com");
++    await user.type(screen.getByPlaceholderText("کد 1"), "abcd-1234");
++    fireEvent.click(screen.getByText("افزودن اکانت"));
++    await waitFor(() => expect(mutateAsync).toHaveBeenCalledOnce());
++    const data = mutateAsync.mock.calls[0][0].data;
++    expect(data.psnPassword).toBe(psnPass);
++    expect(data.emailPassword).toBe(emailPass);
++  });
++
++  it("clears all secrets, pending duplicate payload, and duplicate-warning state on every close path", async () => {
++    const mutateAsync = vi.fn()
++      .mockRejectedValueOnce(makeDuplicateError(["psnEmail"]));
++    vi.mocked(useCreateAccount).mockReturnValue(makeMutation(mutateAsync));
++    const user = userEvent.setup();
++    const onClose = vi.fn();
++    const { rerender } = render(
++      <CreateAccountDialog open gameId={gameId} onSuccess={vi.fn()} onClose={onClose} />,
++    );
++    // Fill all secrets and trigger duplicate warning
++    await fillValidForm(user);
++    fireEvent.click(screen.getByText("افزودن اکانت"));
++    await waitFor(() => screen.getByText("شباهت با اکانت موجود"));
++    // Close externally (parent sets open=false)
++    rerender(
++      <CreateAccountDialog open={false} gameId={gameId} onSuccess={vi.fn()} onClose={onClose} />,
++    );
++    // Reopen and verify every sensitive field is empty
++    rerender(
++      <CreateAccountDialog open gameId={gameId} onSuccess={vi.fn()} onClose={onClose} />,
++    );
++    const psnPassInput = screen.getAllByPlaceholderText(/PlayStation password/i)[0] as HTMLInputElement;
++    expect(psnPassInput.value).toBe("");
++    const emailPassInput = screen.getByPlaceholderText("Email password") as HTMLInputElement;
++    expect(emailPassInput.value).toBe("");
++    const codeInput = screen.getByPlaceholderText("کد 1") as HTMLInputElement;
++    expect(codeInput.value).toBe("");
++    // Duplicate warning must not be visible and no pending retry state
++    expect(screen.queryByText("شباهت با اکانت موجود")).not.toBeInTheDocument();
++    // Re-fill and submit again to prove the previous confirmedOnce state was reset
++    await fillValidForm(userEvent.setup());
++    fireEvent.click(screen.getByText("افزودن اکانت"));
++    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(2));
++    // Second call must not have confirmed:true because previous duplicate state was cleared
++    expect(mutateAsync.mock.calls[1][0].data.confirmed).toBeUndefined();
++  });
++
+   it("does not render when open=false", () => {
+     render(
+       <CreateAccountDialog open={false} gameId={gameId} onSuccess={vi.fn()} onClose={vi.fn()} />,
+diff --git a/artifacts/playsyncer/src/features/account-write/__tests__/EditAccountDialog.test.tsx b/artifacts/playsyncer/src/features/account-write/__tests__/EditAccountDialog.test.tsx
+index 20198f2..5d08c77 100644
+--- a/artifacts/playsyncer/src/features/account-write/__tests__/EditAccountDialog.test.tsx
++++ b/artifacts/playsyncer/src/features/account-write/__tests__/EditAccountDialog.test.tsx
+@@ -306,6 +306,121 @@ describe("EditAccountDialog", () => {
+     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+   });
+ 
++  // ── Password contract (PS-03D5-6A-F1) ───────────────────────────────────
++
++  it("preserves leading and trailing spaces in optional passwords exactly", async () => {
++    const mutateAsync = vi.fn().mockResolvedValue({ account: {} });
++    vi.mocked(useUpdateAccount).mockReturnValue(makeMutation(mutateAsync));
++    const user = userEvent.setup();
++    render(
++      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
++    );
++    // psnPassword with leading/trailing spaces
++    const psnPasswordInput = screen.getAllByPlaceholderText(/خالی = بدون تغییر/)[1] as HTMLInputElement;
++    await user.type(psnPasswordInput, "  NewPsnPass  ");
++    fireEvent.click(screen.getByText("ذخیره تغییرات"));
++    await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
++    const payload = mutateAsync.mock.calls[0][0].data;
++    expect(payload.psnPassword).toBe("  NewPsnPass  ");
++    // Empty email password must be omitted exactly
++    expect(payload.emailPassword).toBeUndefined();
++  });
++
++  it("omits optional passwords only when their exact value is empty", async () => {
++    const mutateAsync = vi.fn().mockResolvedValue({ account: {} });
++    vi.mocked(useUpdateAccount).mockReturnValue(makeMutation(mutateAsync));
++    const user = userEvent.setup();
++    render(
++      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
++    );
++    // Type psnPassword and leave emailPassword empty
++    const psnPasswordInput = screen.getAllByPlaceholderText(/خالی = بدون تغییر/)[1] as HTMLInputElement;
++    await user.type(psnPasswordInput, "only-psn-pass");
++    fireEvent.click(screen.getByText("ذخیره تغییرات"));
++    await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
++    const payload = mutateAsync.mock.calls[0][0].data;
++    expect(payload.psnPassword).toBe("only-psn-pass");
++    expect(payload.emailPassword).toBeUndefined();
++    expect(payload.familyManagementEmail).toBeUndefined();
++  });
++
++  // ── Empty safe-DTO fields (PS-03D5-6A-F1) ─────────────────────────────────
++
++  it("shows validation error when onlineId is cleared from an existing value", async () => {
++    const mutateAsync = vi.fn().mockResolvedValue({ account: {} });
++    vi.mocked(useUpdateAccount).mockReturnValue(makeMutation(mutateAsync));
++    const user = userEvent.setup();
++    render(
++      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
++    );
++    const onlineIdInput = screen.getByPlaceholderText("PSN username") as HTMLInputElement;
++    await user.clear(onlineIdInput);
++    fireEvent.click(screen.getByText("ذخیره تغییرات"));
++    await waitFor(() =>
++      expect(screen.getByText("Online ID نمی‌تواند خالی باشد")).toBeInTheDocument(),
++    );
++    expect(mutateAsync).not.toHaveBeenCalled();
++  });
++
++  it("shows validation error when birthDate is cleared from an existing value", async () => {
++    const mutateAsync = vi.fn().mockResolvedValue({ account: {} });
++    vi.mocked(useUpdateAccount).mockReturnValue(makeMutation(mutateAsync));
++    const user = userEvent.setup();
++    render(
++      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
++    );
++    const birthDateInput = screen.getByPlaceholderText("1990-08-27") as HTMLInputElement;
++    await user.clear(birthDateInput);
++    fireEvent.click(screen.getByText("ذخیره تغییرات"));
++    await waitFor(() =>
++      expect(screen.getByText("تاریخ تولد نمی‌تواند خالی باشد")).toBeInTheDocument(),
++    );
++    expect(mutateAsync).not.toHaveBeenCalled();
++  });
++
++  it("does not construct payload properties with undefined when safe-DTO fields are cleared", async () => {
++    const mutateAsync = vi.fn().mockResolvedValue({ account: {} });
++    vi.mocked(useUpdateAccount).mockReturnValue(makeMutation(mutateAsync));
++    const user = userEvent.setup();
++    render(
++      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
++    );
++    // Clear both safe-DTO fields and a password — validation must block, not send undefined.
++    const onlineIdInput = screen.getByPlaceholderText("PSN username") as HTMLInputElement;
++    const birthDateInput = screen.getByPlaceholderText("1990-08-27") as HTMLInputElement;
++    await user.clear(onlineIdInput);
++    await user.clear(birthDateInput);
++    const psnPasswordInput = screen.getAllByPlaceholderText(/خالی = بدون تغییر/)[1] as HTMLInputElement;
++    await user.type(psnPasswordInput, "psn123");
++    fireEvent.click(screen.getByText("ذخیره تغییرات"));
++    await waitFor(() =>
++      expect(screen.getByText("Online ID نمی‌تواند خالی باشد")).toBeInTheDocument(),
++    );
++    expect(mutateAsync).not.toHaveBeenCalled();
++  });
++
++  it("submits valid changed onlineId and birthDate normally", async () => {
++    const mutateAsync = vi.fn().mockResolvedValue({ account: {} });
++    vi.mocked(useUpdateAccount).mockReturnValue(makeMutation(mutateAsync));
++    const user = userEvent.setup();
++    render(
++      <EditAccountDialog open account={account} onSuccess={vi.fn()} onClose={vi.fn()} />,
++    );
++    const onlineIdInput = screen.getByPlaceholderText("PSN username") as HTMLInputElement;
++    const birthDateInput = screen.getByPlaceholderText("1990-08-27") as HTMLInputElement;
++    await user.clear(onlineIdInput);
++    await user.type(onlineIdInput, "new_online_id");
++    await user.clear(birthDateInput);
++    await user.type(birthDateInput, "1995-05-20");
++    fireEvent.click(screen.getByText("ذخیره تغییرات"));
++    await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
++    const payload = mutateAsync.mock.calls[0][0].data;
++    expect(payload.onlineId).toBe("new_online_id");
++    expect(payload.birthDate).toBe("1995-05-20");
++    // No undefined properties in the payload
++    expect(Object.values(payload).some((v) => v === undefined)).toBe(false);
++  });
++
+   it("does not render when account is null", () => {
+     render(
+       <EditAccountDialog open account={null} onSuccess={vi.fn()} onClose={vi.fn()} />,
+diff --git a/artifacts/playsyncer/src/features/account-write/__tests__/StatusOverrideDialog.test.tsx b/artifacts/playsyncer/src/features/account-write/__tests__/StatusOverrideDialog.test.tsx
+index 49afcdd..10882e1 100644
+--- a/artifacts/playsyncer/src/features/account-write/__tests__/StatusOverrideDialog.test.tsx
++++ b/artifacts/playsyncer/src/features/account-write/__tests__/StatusOverrideDialog.test.tsx
+@@ -208,4 +208,43 @@ describe("StatusOverrideDialog", () => {
+     await waitFor(() => screen.getByText(PERSIAN_GENERIC_MSG));
+     expect(screen.queryByText("raw internal server error with SQL")).not.toBeInTheDocument();
+   });
++
++  // ── State reset on close/reopen (PS-03D5-6A-F1) ───────────────────────────
++
++  it("clears selected action and previous error when closed externally", async () => {
++    const mutateAsync = vi.fn().mockRejectedValue(makeApiError("SOME_UNKNOWN_ERROR", 500));
++    vi.mocked(useSetAccountStatusOverride).mockReturnValue(makeMutation(mutateAsync));
++    const { rerender } = render(
++      <StatusOverrideDialog open accountId={accountId} onSuccess={onSuccess} onClose={onClose} />,
++    );
++    // Trigger an error
++    fireEvent.click(screen.getByText("غیرفعال"));
++    fireEvent.click(screen.getByText("اعمال"));
++    await waitFor(() => screen.getByText(PERSIAN_GENERIC_MSG));
++    // Close externally
++    rerender(
++      <StatusOverrideDialog open={false} accountId={accountId} onSuccess={onSuccess} onClose={onClose} />,
++    );
++    rerender(
++      <StatusOverrideDialog open accountId={accountId} onSuccess={onSuccess} onClose={onClose} />,
++    );
++    // No error message and no selected button remains active
++    expect(screen.queryByText(PERSIAN_GENERIC_MSG)).not.toBeInTheDocument();
++    expect(screen.queryByText("لطفاً یک گزینه انتخاب کنید")).not.toBeInTheDocument();
++    // Apply button is disabled because nothing is selected
++    const applyBtn = screen.getByText("اعمال");
++    expect(applyBtn).toBeDisabled();
++  });
++
++  it("uses the approved descriptions for SOLD, INACTIVE, and Clear", () => {
++    vi.mocked(useSetAccountStatusOverride).mockReturnValue(
++      makeMutation(vi.fn().mockResolvedValue({})),
++    );
++    render(
++      <StatusOverrideDialog open accountId={accountId} onSuccess={onSuccess} onClose={onClose} />,
++    );
++    expect(screen.getByText("اکانت به‌صورت دستی فروخته‌شده در نظر گرفته می‌شود")).toBeInTheDocument();
++    expect(screen.getByText("اکانت از چرخه استفاده و فروش خارج می‌شود")).toBeInTheDocument();
++    expect(screen.getByText("وضعیت دوباره از اطلاعات معتبر سیستم محاسبه می‌شود")).toBeInTheDocument();
++  });
+ });
+diff --git a/docs/CURRENT_PHASE.md b/docs/CURRENT_PHASE.md
+index 118aa36..45885ca 100644
+--- a/docs/CURRENT_PHASE.md
++++ b/docs/CURRENT_PHASE.md
+@@ -17,10 +17,13 @@ Current sub-stage:
+ PS-03D5-6A — Account Write Frontend Core Reconstruction
+ 
+ Current status:
+-PS-03D5-6A — IMPLEMENTATION COMPLETE
++PS-03D5-6A — IMPLEMENTATION COMPLETE, AWAITING SOURCE REVIEW
+ 
+ Next planned sub-stage:
+-PS-03D5-7 — Account Mutation Verification and PS-03D5 Closure
++PS-03D5-6B — Frontend Safety and Final Verification
++
++PS-03D5-7:
++NOT AUTHORIZED
+ 
+ Runtime activation of Account mutations remains deferred to a future Security phase outside PS-03.
+ 

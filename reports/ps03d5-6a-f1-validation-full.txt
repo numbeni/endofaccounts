@@ -1,0 +1,217 @@
+PS-03D5-6A-F1 VALIDATION FULL REPORT
+Generated: 2026-07-19
+==============================================
+
+══════════════════════════════════════════════
+STEP 1: pnpm install --frozen-lockfile
+══════════════════════════════════════════════
+COMMAND: pnpm install --frozen-lockfile
+EXIT CODE: 0
+
+STDOUT:
+Scope: all 9 workspace projects
+Lockfile is up to date, resolution step is skipped
+Already up to date
+. preinstall$ sh -c 'rm -f package-lock.json yarn.lock; ...'
+└─ Done in 36ms
+Done in 2s using pnpm v10.26.1
+
+STDERR: (none)
+
+══════════════════════════════════════════════
+STEP 2: pnpm run typecheck
+══════════════════════════════════════════════
+COMMAND: pnpm run typecheck
+EXIT CODE: 0
+
+STDOUT:
+> workspace@0.0.0 typecheck /home/runner/workspace
+> pnpm run typecheck:libs && pnpm -r --filter "./artifacts/**" --filter "./scripts" --if-present run typecheck
+
+> workspace@0.0.0 typecheck:libs /home/runner/workspace
+> tsc --build
+
+Scope: 4 of 9 workspace projects
+artifacts/api-server typecheck$ tsc -p tsconfig.json --noEmit
+artifacts/mockup-sandbox typecheck$ tsc -p tsconfig.json --noEmit
+artifacts/api-server typecheck: Done
+artifacts/playsyncer typecheck$ tsc -p tsconfig.json --noEmit
+artifacts/mockup-sandbox typecheck: Done
+scripts typecheck$ tsc -p tsconfig.json --noEmit
+artifacts/playsyncer typecheck: Done
+scripts typecheck: Done
+
+STDERR: (none)
+
+NOTE: One transient attempt to run `tsc --build` directly on playsyncer before the workspace libs were built produced TS2304 for `clearSensitiveAndClose` in `EditAccountDialog.tsx`; this was due to an incomplete edit and was corrected in the same turn. The final `pnpm run typecheck` is clean.
+
+══════════════════════════════════════════════
+STEP 3: pnpm --filter @workspace/playsyncer run test
+══════════════════════════════════════════════
+COMMAND: pnpm --filter @workspace/playsyncer run test
+EXIT CODE: 0
+
+STDOUT:
+> @workspace/playsyncer@0.0.0 test /home/runner/workspace/artifacts/playsyncer
+> vitest run --config vitest.config.ts
+
+ RUN  v3.2.7 /home/runner/workspace/artifacts/playsyncer
+
+ ✓ src/features/account-write/__tests__/CreateAccountDialog.test.tsx (21 tests) 4633ms
+ ✓ src/features/account-write/__tests__/EditAccountDialog.test.tsx (22 tests) 878ms
+ ✓ src/features/account-write/__tests__/isolation.test.tsx (6 tests) 169ms
+ ✓ src/pages/GameDetailPage.test.tsx (13 tests) 248ms
+ ✓ src/features/account-write/__tests__/StatusOverrideDialog.test.tsx (13 tests) 167ms
+ ✓ src/components/AccountCardReadOnly.test.tsx (15 tests) 216ms
+ ✓ src/components/AccountDetailsReadOnly.test.tsx (13 tests) 165ms
+ ✓ src/features/account-write/__tests__/DuplicateWarningDialog.test.tsx (6 tests) 86ms
+ ✓ src/features/account-write/__tests__/DeleteUnavailableDialog.test.tsx (7 tests) 73ms
+ ✓ src/components/AccountStatusBadge.test.tsx (6 tests) 38ms
+ ✓ src/features/account-write/__tests__/validateBirthDate.test.ts (22 tests) 8ms
+ ✓ src/features/account-write/__tests__/parseApiError.test.ts (17 tests) 7ms
+
+ Test Files  12 passed (12)
+      Tests  161 passed (161)
+   Start at  17:48:22
+   Duration  17.06s
+
+STDERR: (none)
+
+══════════════════════════════════════════════
+STEP 4: pnpm --filter @workspace/playsyncer run test -- --reporter=verbose
+══════════════════════════════════════════════
+COMMAND: pnpm --filter @workspace/playsyncer run test -- --reporter=verbose
+EXIT CODE: 0
+
+STDOUT:
+> @workspace/playsyncer@0.0.0 test /home/runner/workspace/artifacts/playsyncer
+> vitest run --config vitest.config.ts -- --reporter=verbose
+
+ RUN  v3.2.7 /home/runner/workspace/artifacts/playsyncer
+
+ ✓ src/features/account-write/__tests__/CreateAccountDialog.test.tsx (21 tests) 4900ms
+   ✓ CreateAccountDialog > renders all required fields
+   ✓ CreateAccountDialog > does not render statusOverride during Create
+   ✓ CreateAccountDialog > validates required fields and shows Persian error messages
+   ✓ CreateAccountDialog > rejects invalid birth date format (YYYY/MM/DD)
+   ✓ CreateAccountDialog > rejects impossible birth date 2026-02-31
+   ✓ CreateAccountDialog > sends correct request shape on valid submit
+   ✓ CreateAccountDialog > does not allow backup codes array to be empty (at least one required)
+   ✓ CreateAccountDialog > backup code rows can be added
+   ✓ CreateAccountDialog > backup code rows can be removed
+   ✓ CreateAccountDialog > opens DuplicateWarningDialog on first DUPLICATE_WARNING
+   ✓ CreateAccountDialog > sends confirmed: true on duplicate confirm
+   ✓ CreateAccountDialog > cancel on DuplicateWarningDialog sends no retry
+   ✓ CreateAccountDialog > second DUPLICATE_WARNING does NOT open dialog again (no retry loop)
+   ✓ CreateAccountDialog > shows PERSIAN_DISABLED_MSG for ACCOUNT_OPS_DISABLED
+   ✓ CreateAccountDialog > shows PERSIAN_GENERIC_MSG for unknown error
+   ✓ CreateAccountDialog > never renders raw error messages, URLs, or server text
+   ✓ CreateAccountDialog > clears password and backup codes after success
+   ✓ CreateAccountDialog > clears password and backup codes when dialog is closed
+   ✓ CreateAccountDialog > preserves leading and trailing spaces in passwords exactly
+   ✓ CreateAccountDialog > clears all secrets, pending duplicate payload, and duplicate-warning state on every close path
+ ✓ src/features/account-write/__tests__/EditAccountDialog.test.tsx (22 tests) 913ms
+   ✓ EditAccountDialog > prefills onlineId and birthDate from the safe DTO
+   ✓ EditAccountDialog > never prefills PSN Password
+   ✓ EditAccountDialog > starts psnEmail, emailPassword, familyManagementEmail as empty
+   ✓ EditAccountDialog > displays account identifier read-only, does not submit it
+   ✓ EditAccountDialog > submits only changed fields — unchanged onlineId is omitted
+   ✓ EditAccountDialog > shows 'no changes' message when nothing is changed
+   ✓ EditAccountDialog > does not render Backup Code editing section
+   ✓ EditAccountDialog > opens DuplicateWarningDialog on DUPLICATE_WARNING and shows field labels only
+   ✓ EditAccountDialog > sends confirmed: true on duplicate confirm
+   ✓ EditAccountDialog > second DUPLICATE_WARNING shows generic error (no retry loop)
+   ✓ EditAccountDialog > shows PERSIAN_DISABLED_MSG for ACCOUNT_OPS_DISABLED
+   ✓ EditAccountDialog > shows PERSIAN_GENERIC_MSG for unknown error
+   ✓ EditAccountDialog > clears sensitive fields on Account switch (account.id change)
+   ✓ EditAccountDialog > clears sensitive fields when external open=false
+   ✓ EditAccountDialog > does not render when open=false
+   ✓ EditAccountDialog > does not render when account is null
+   ✓ EditAccountDialog > preserves leading and trailing spaces in optional passwords exactly
+   ✓ EditAccountDialog > omits optional passwords only when their exact value is empty
+   ✓ EditAccountDialog > shows validation error when onlineId is cleared from an existing value
+   ✓ EditAccountDialog > shows validation error when birthDate is cleared from an existing value
+   ✓ EditAccountDialog > does not construct payload properties with undefined when safe-DTO fields are cleared
+   ✓ EditAccountDialog > submits valid changed onlineId and birthDate normally
+ ✓ src/features/account-write/__tests__/isolation.test.tsx (6 tests) 169ms
+ ✓ src/pages/GameDetailPage.test.tsx (13 tests) 234ms
+ ✓ src/components/AccountCardReadOnly.test.tsx (15 tests) 216ms
+ ✓ src/features/account-write/__tests__/StatusOverrideDialog.test.tsx (13 tests) 184ms
+   ✓ StatusOverrideDialog > offers SOLD, INACTIVE, and Clear Override options
+   ✓ StatusOverrideDialog > does NOT offer AVAILABLE or PARTIALLY_SOLD
+   ✓ StatusOverrideDialog > sends { statusOverride: 'SOLD' } when SOLD is selected
+   ✓ StatusOverrideDialog > sends { statusOverride: 'INACTIVE' } when INACTIVE is selected
+   ✓ StatusOverrideDialog > sends { statusOverride: null } for Clear Override
+   ✓ StatusOverrideDialog > calls onSuccess after successful mutation
+   ✓ StatusOverrideDialog > shows PERSIAN_DISABLED_MSG when ACCOUNT_OPS_DISABLED
+   ✓ StatusOverrideDialog > shows PERSIAN_GENERIC_MSG for unknown error
+   ✓ StatusOverrideDialog > does not render when open=false
+   ✓ StatusOverrideDialog > calls onClose when Cancel is clicked
+   ✓ StatusOverrideDialog > does not render raw error messages, URLs, passwords, or server text
+   ✓ StatusOverrideDialog > clears selected action and previous error when closed externally
+   ✓ StatusOverrideDialog > uses the approved descriptions for SOLD, INACTIVE, and Clear
+ ✓ src/components/AccountDetailsReadOnly.test.tsx (13 tests) 162ms
+ ✓ src/features/account-write/__tests__/DuplicateWarningDialog.test.tsx (6 tests) 76ms
+   ✓ DuplicateWarningDialog > displays only approved Persian labels for known fields
+   ✓ DuplicateWarningDialog > does not render unknown internal field names raw
+   ✓ DuplicateWarningDialog > never shows field values or account IDs
+   ✓ DuplicateWarningDialog > calls onConfirm when confirm is clicked
+   ✓ DuplicateWarningDialog > calls onCancel when cancel is clicked
+   ✓ DuplicateWarningDialog > does not render when open=false
+ ✓ src/components/AccountStatusBadge.test.tsx (6 tests) 38ms
+ ✓ src/features/account-write/__tests__/DeleteUnavailableDialog.test.tsx (7 tests) 70ms
+ ✓ src/features/account-write/__tests__/validateBirthDate.test.ts (22 tests) 7ms
+ ✓ src/features/account-write/__tests__/parseApiError.test.ts (17 tests) 7ms
+
+ Test Files  12 passed (12)
+      Tests  161 passed (161)
+   Start at  17:49:15
+   Duration  17.06s
+
+STDERR: (none)
+
+══════════════════════════════════════════════
+STEP 5: PORT=24351 BASE_PATH=/ pnpm --filter @workspace/playsyncer run build
+══════════════════════════════════════════════
+COMMAND: PORT=24351 BASE_PATH=/ pnpm --filter @workspace/playsyncer run build
+EXIT CODE: 0
+
+STDOUT:
+> @workspace/playsyncer@0.0.0 build /home/runner/workspace/artifacts/playsyncer
+> vite build --config vite.config.ts
+
+vite v7.3.5 building client environment for production...
+src/components/ui/sonner.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+✓ 1768 modules transformed.
+dist/public/index.html                                               0.67 kB │ gzip:   0.43 kB
+dist/public/assets/vazirmatn-latin-ext-wght-normal-tDTa1Fj6.woff2   21.86 kB │ gzip:   0.43 kB
+dist/public/assets/vazirmatn-latin-wght-normal-BFexNX-K.woff2   34.52 kB │ gzip:   0.43 kB
+dist/public/assets/vazirmatn-arabic-wght-normal-Cafbb7Zc.woff2   46.31 kB │ gzip:   0.43 kB
+dist/public/assets/index-CYr1Z2d_.css                              114.71 kB │ gzip:  18.72 kB
+dist/public/assets/index-BESwk5kC.js                               400.43 kB │ gzip: 120.41 kB
+✓ built in 3.00s
+
+STDERR:
+src/components/ui/sonner.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+(pre-existing warning unrelated to this sub-stage)
+
+══════════════════════════════════════════════
+STEP 6: git diff --check
+══════════════════════════════════════════════
+COMMAND: git diff --check
+EXIT CODE: 0
+
+STDOUT: (none)
+STDERR: (none)
+
+══════════════════════════════════════════════
+SUMMARY
+══════════════════════════════════════════════
+pnpm install --frozen-lockfile      EXIT: 0  PASS
+pnpm run typecheck                  EXIT: 0  PASS
+playsyncer test                     EXIT: 0  PASS  (161/161)
+playsyncer test --verbose           EXIT: 0  PASS  (161/161)
+PORT=24351 BASE_PATH=/ pnpm build   EXIT: 0  PASS
+git diff --check                    EXIT: 0  PASS
+
+ALL CHECKS PASSED

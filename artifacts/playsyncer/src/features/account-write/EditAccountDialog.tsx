@@ -124,12 +124,17 @@ export function EditAccountDialog({ open, account, onSuccess, onClose }: Props) 
     if (open) {
       initState(account);
     } else {
-      // Clear sensitive values when closed externally (open=false).
+      // External close: clear selected action, previous error, and sensitive values.
       const s = emptySensitive();
       setPsnEmail(s.psnEmail);
       setPsnPassword(s.psnPassword);
       setEmailPassword(s.emailPassword);
       setFamilyManagementEmail(s.familyManagementEmail);
+      setShowDuplicate(false);
+      setDuplicateFields([]);
+      pendingPayloadRef.current = null;
+      confirmedOnceRef.current = false;
+      setErrors({});
     }
   }, [open, account?.id]);
 
@@ -143,21 +148,8 @@ export function EditAccountDialog({ open, account, onSuccess, onClose }: Props) 
     return () => document.removeEventListener("keydown", handler);
   }, [open, showDuplicate]);
 
-  const clearSensitiveAndClose = () => {
-    const s = emptySensitive();
-    setPsnEmail(s.psnEmail);
-    setPsnPassword(s.psnPassword);
-    setEmailPassword(s.emailPassword);
-    setFamilyManagementEmail(s.familyManagementEmail);
-    setShowDuplicate(false);
-    setDuplicateFields([]);
-    pendingPayloadRef.current = null;
-    confirmedOnceRef.current = false;
-    setErrors({});
-  };
-
   const handleClose = () => {
-    clearSensitiveAndClose();
+    // Let the useEffect on open=false handle clearing.
     onClose();
   };
 
@@ -166,16 +158,30 @@ export function EditAccountDialog({ open, account, onSuccess, onClose }: Props) 
     const payload: UpdateAccountRequest = {};
 
     // Fields not in safe DTO — include if non-empty (user intent to change).
-    if (psnEmail.trim()) payload.psnEmail = psnEmail.trim();
-    if (psnPassword.trim()) payload.psnPassword = psnPassword.trim();
-    if (emailPassword.trim()) payload.emailPassword = emailPassword.trim();
-    if (familyManagementEmail.trim()) payload.familyManagementEmail = familyManagementEmail.trim();
+    // Exact empty string means "no change"; preserve non-empty values exactly.
+    if (psnEmail.length > 0) payload.psnEmail = psnEmail;
+    if (psnPassword.length > 0) payload.psnPassword = psnPassword;
+    if (emailPassword.length > 0) payload.emailPassword = emailPassword;
+    if (familyManagementEmail.length > 0) payload.familyManagementEmail = familyManagementEmail;
 
     // Fields in safe DTO — include if different from current value.
     const currentOnlineId = account?.onlineId ?? "";
     const currentBirthDate = account?.birthDate ?? "";
-    if (onlineId.trim() !== currentOnlineId) payload.onlineId = onlineId.trim() || undefined;
-    if (birthDate.trim() !== currentBirthDate) payload.birthDate = birthDate.trim() || undefined;
+    if (onlineId.trim() !== currentOnlineId) {
+      // If the user clears an existing value, it is a validation error — not a payload update.
+      if (!onlineId.trim()) {
+        // Caller should validate first; this branch is defensive.
+      } else {
+        payload.onlineId = onlineId.trim();
+      }
+    }
+    if (birthDate.trim() !== currentBirthDate) {
+      if (!birthDate.trim()) {
+        // Defensive: empty DTO field should be rejected by validate(), never sent as undefined.
+      } else {
+        payload.birthDate = birthDate.trim();
+      }
+    }
 
     return payload;
   };
@@ -191,9 +197,16 @@ export function EditAccountDialog({ open, account, onSuccess, onClose }: Props) 
     if (birthDate.trim() && !isValidBirthDate(birthDate)) {
       errs.birthDate = "فرمت باید YYYY-MM-DD باشد و تاریخ واقعی گریگوری باشد";
     }
+    // If the user clears an existing safe-DTO value, block submission.
+    if (account?.onlineId && !onlineId.trim()) {
+      errs.onlineId = "Online ID نمی‌تواند خالی باشد";
+    }
+    if (account?.birthDate && !birthDate.trim()) {
+      errs.birthDate = "تاریخ تولد نمی‌تواند خالی باشد";
+    }
     const changed = buildChangedPayload();
     const hasChanges = Object.keys(changed).length > 0;
-    if (!hasChanges) {
+    if (!hasChanges && Object.keys(errs).length === 0) {
       errs.noChanges = "هیچ تغییری وارد نشده است";
     }
     setErrors(errs);
@@ -214,7 +227,8 @@ export function EditAccountDialog({ open, account, onSuccess, onClose }: Props) 
 
     try {
       await mutation.mutateAsync({ accountId: account.id, data: payload });
-      clearSensitiveAndClose();
+      // Success: parent closes the dialog (open=false triggers useEffect cleanup).
+      handleClose();
       onSuccess();
     } catch (err) {
       const parsed = parseMutationError(err);
@@ -238,7 +252,8 @@ export function EditAccountDialog({ open, account, onSuccess, onClose }: Props) 
         accountId: account.id,
         data: { ...pendingPayloadRef.current, confirmed: true },
       });
-      clearSensitiveAndClose();
+      // Success: parent closes the dialog (open=false triggers useEffect cleanup).
+      handleClose();
       onSuccess();
     } catch (err) {
       const parsed = parseMutationError(err);
@@ -347,7 +362,7 @@ export function EditAccountDialog({ open, account, onSuccess, onClose }: Props) 
               <FormField label="رمز عبور PSN" hint="خالی بگذارید تا تغییر نکند">
                 {/* Never prefilled */}
                 <input
-                  type="text"
+                  type="password"
                   dir="ltr"
                   value={psnPassword}
                   onChange={(e) => setPsnPassword(e.target.value)}
@@ -360,7 +375,7 @@ export function EditAccountDialog({ open, account, onSuccess, onClose }: Props) 
               <FormField label="رمز ایمیل" hint="خالی بگذارید تا تغییر نکند">
                 {/* Never prefilled */}
                 <input
-                  type="text"
+                  type="password"
                   dir="ltr"
                   value={emailPassword}
                   onChange={(e) => setEmailPassword(e.target.value)}

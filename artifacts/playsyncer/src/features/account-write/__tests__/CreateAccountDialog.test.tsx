@@ -379,6 +379,71 @@ describe("CreateAccountDialog", () => {
     expect(codeInput.value).toBe("");
   });
 
+  // ── Password contract (PS-03D5-6A-F1) ───────────────────────────────────
+
+  it("preserves leading and trailing spaces in passwords exactly", async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({ account: {} });
+    vi.mocked(useCreateAccount).mockReturnValue(makeMutation(mutateAsync));
+    const user = userEvent.setup();
+    render(
+      <CreateAccountDialog open gameId={gameId} onSuccess={vi.fn()} onClose={vi.fn()} />,
+    );
+    // Passwords with leading/trailing spaces must be preserved exactly.
+    const psnPass = "  SecurePass123  ";
+    const emailPass = "  EmailPass456  ";
+    const psnPassInput = screen.getAllByPlaceholderText(/PlayStation password/i)[0] as HTMLInputElement;
+    await user.type(psnPassInput, psnPass);
+    await user.type(screen.getByPlaceholderText("Email password"), emailPass);
+    // Fill remaining required fields so validation does not block submit
+    await user.type(screen.getByPlaceholderText("example@playstation.com"), "test@psn.com");
+    await user.type(screen.getByPlaceholderText("PSN username"), "my_psn_user");
+    await user.type(screen.getByPlaceholderText("1990-08-27"), "1990-08-27");
+    await user.type(screen.getByPlaceholderText("family@email.com"), "family@test.com");
+    await user.type(screen.getByPlaceholderText("کد 1"), "abcd-1234");
+    fireEvent.click(screen.getByText("افزودن اکانت"));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledOnce());
+    const data = mutateAsync.mock.calls[0][0].data;
+    expect(data.psnPassword).toBe(psnPass);
+    expect(data.emailPassword).toBe(emailPass);
+  });
+
+  it("clears all secrets, pending duplicate payload, and duplicate-warning state on every close path", async () => {
+    const mutateAsync = vi.fn()
+      .mockRejectedValueOnce(makeDuplicateError(["psnEmail"]));
+    vi.mocked(useCreateAccount).mockReturnValue(makeMutation(mutateAsync));
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <CreateAccountDialog open gameId={gameId} onSuccess={vi.fn()} onClose={onClose} />,
+    );
+    // Fill all secrets and trigger duplicate warning
+    await fillValidForm(user);
+    fireEvent.click(screen.getByText("افزودن اکانت"));
+    await waitFor(() => screen.getByText("شباهت با اکانت موجود"));
+    // Close externally (parent sets open=false)
+    rerender(
+      <CreateAccountDialog open={false} gameId={gameId} onSuccess={vi.fn()} onClose={onClose} />,
+    );
+    // Reopen and verify every sensitive field is empty
+    rerender(
+      <CreateAccountDialog open gameId={gameId} onSuccess={vi.fn()} onClose={onClose} />,
+    );
+    const psnPassInput = screen.getAllByPlaceholderText(/PlayStation password/i)[0] as HTMLInputElement;
+    expect(psnPassInput.value).toBe("");
+    const emailPassInput = screen.getByPlaceholderText("Email password") as HTMLInputElement;
+    expect(emailPassInput.value).toBe("");
+    const codeInput = screen.getByPlaceholderText("کد 1") as HTMLInputElement;
+    expect(codeInput.value).toBe("");
+    // Duplicate warning must not be visible and no pending retry state
+    expect(screen.queryByText("شباهت با اکانت موجود")).not.toBeInTheDocument();
+    // Re-fill and submit again to prove the previous confirmedOnce state was reset
+    await fillValidForm(userEvent.setup());
+    fireEvent.click(screen.getByText("افزودن اکانت"));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(2));
+    // Second call must not have confirmed:true because previous duplicate state was cleared
+    expect(mutateAsync.mock.calls[1][0].data.confirmed).toBeUndefined();
+  });
+
   it("does not render when open=false", () => {
     render(
       <CreateAccountDialog open={false} gameId={gameId} onSuccess={vi.fn()} onClose={vi.fn()} />,

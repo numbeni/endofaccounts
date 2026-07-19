@@ -57,13 +57,8 @@ type FieldErrors = Partial<
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const isValidEmail = (v: string) => EMAIL_RE.test(v.trim());
 
-/** Clear only sensitive fields — called on success and every close path. */
-function emptySensitive() {
-  return {
-    psnPassword: "",
-    backupCodes: [""],
-  };
-}
+/** Non-empty if length > 0, preserving leading/trailing spaces exactly. */
+const isNonEmpty = (v: string) => v.length > 0;
 
 export function CreateAccountDialog({ open, gameId, onSuccess, onClose }: Props) {
   const [psnEmail, setPsnEmail] = useState("");
@@ -94,9 +89,9 @@ export function CreateAccountDialog({ open, gameId, onSuccess, onClose }: Props)
   const mutation = useCreateAccount();
 
   const clearSensitive = () => {
-    const s = emptySensitive();
-    setPsnPassword(s.psnPassword);
-    setBackupCodes(s.backupCodes);
+    setPsnPassword("");
+    setEmailPassword("");
+    setBackupCodes([""]);
   };
 
   const resetAll = () => {
@@ -115,7 +110,14 @@ export function CreateAccountDialog({ open, gameId, onSuccess, onClose }: Props)
   };
 
   useEffect(() => {
-    if (open) {
+    if (!open) {
+      // External close: immediately clear secrets, pending duplicate state, and duplicate-warning dialog.
+      clearSensitive();
+      setShowDuplicate(false);
+      setDuplicateFields([]);
+      pendingPayloadRef.current = null;
+      confirmedOnceRef.current = false;
+    } else {
       resetAll();
     }
   }, [open]);
@@ -131,8 +133,7 @@ export function CreateAccountDialog({ open, gameId, onSuccess, onClose }: Props)
   }, [open, showDuplicate]);
 
   const handleClose = () => {
-    clearSensitive();
-    resetAll();
+    // Close button triggers the same external-close cleanup via the useEffect on open=false.
     onClose();
   };
 
@@ -143,8 +144,8 @@ export function CreateAccountDialog({ open, gameId, onSuccess, onClose }: Props)
     } else if (!isValidEmail(psnEmail)) {
       errs.psnEmail = "فرمت ایمیل PSN صحیح نیست";
     }
-    if (!psnPassword.trim()) errs.psnPassword = "رمز عبور PSN الزامی است";
-    if (!emailPassword.trim()) errs.emailPassword = "رمز ایمیل الزامی است";
+    if (!isNonEmpty(psnPassword)) errs.psnPassword = "رمز عبور PSN الزامی است";
+    if (!isNonEmpty(emailPassword)) errs.emailPassword = "رمز ایمیل الزامی است";
     if (!onlineId.trim()) errs.onlineId = "Online ID الزامی است";
     if (!birthDate.trim()) {
       errs.birthDate = "تاریخ تولد الزامی است";
@@ -166,8 +167,8 @@ export function CreateAccountDialog({ open, gameId, onSuccess, onClose }: Props)
 
   const buildPayload = () => ({
     psnEmail: psnEmail.trim(),
-    psnPassword: psnPassword.trim(),
-    emailPassword: emailPassword.trim(),
+    psnPassword: psnPassword,
+    emailPassword: emailPassword,
     onlineId: onlineId.trim(),
     birthDate: birthDate.trim(),
     familyManagementEmail: familyManagementEmail.trim(),
@@ -323,7 +324,7 @@ export function CreateAccountDialog({ open, gameId, onSuccess, onClose }: Props)
 
               <FormField label="رمز عبور PSN" required error={errors.psnPassword}>
                 <input
-                  type="text"
+                  type="password"
                   dir="ltr"
                   value={psnPassword}
                   onChange={(e) => {
@@ -341,7 +342,7 @@ export function CreateAccountDialog({ open, gameId, onSuccess, onClose }: Props)
 
               <FormField label="رمز ایمیل" required error={errors.emailPassword}>
                 <input
-                  type="text"
+                  type="password"
                   dir="ltr"
                   value={emailPassword}
                   onChange={(e) => {

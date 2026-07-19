@@ -17,10 +17,13 @@ Current sub-stage:
 PS-03D5-6A — Account Write Frontend Core Reconstruction
 
 Current status:
-PS-03D5-6A — IMPLEMENTATION COMPLETE
+PS-03D5-6A — IMPLEMENTATION COMPLETE, AWAITING SOURCE REVIEW
 
 Next planned sub-stage:
-PS-03D5-7 — Account Mutation Verification and PS-03D5 Closure
+PS-03D5-6B — Frontend Safety and Final Verification
+
+PS-03D5-7:
+NOT AUTHORIZED
 
 Runtime activation of Account mutations remains deferred to a future Security phase outside PS-03.
 

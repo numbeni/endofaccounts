@@ -1,0 +1,222 @@
+Continue in the current PlaySyncer workspace.
+
+Start only:
+
+PS-03D5-6A-F1 — Account Write Core Contract and Packaging Correction
+
+Do not rebuild the feature.
+Preserve the valid PS-03D5-6A implementation.
+Correct only the confirmed defects below.
+Do not start PS-03D5-6B or PS-03D5-7.
+Do not commit.
+
+## Confirmed corrections
+
+1. Preserve Password values exactly
+
+In CreateAccountDialog and EditAccountDialog:
+
+- do not trim psnPassword
+- do not trim emailPassword
+- validate only that required Create passwords have length greater than zero
+- optional Edit passwords are omitted only when their exact value is empty
+- send non-empty Passwords exactly as entered
+
+Add tests proving leading and trailing spaces are preserved.
+
+2. Clear Create secrets on every close path
+
+When CreateAccountDialog changes from open=true to open=false, immediately clear:
+
+- psnPassword
+- emailPassword
+- backupCodes
+- pending duplicate payload
+- duplicate-warning state
+
+Add a test that enters all secrets, rerenders with open=false, reopens, and proves every sensitive field is empty.
+
+3. Mask Password fields
+
+Use type="password" for:
+
+- Create PSN Password
+- Create Email Password
+- Edit PSN Password
+- Edit Email Password
+
+Do not add Secret Reveal functionality.
+
+4. Do not display unknown duplicate field names
+
+DuplicateWarningDialog must display only approved labels:
+
+- psnEmail
+- familyManagementEmail
+- onlineId
+
+Unknown names must never be rendered raw.
+
+Either omit unknown fields or show one safe generic Persian label.
+
+Add tests using an unknown internal field name and prove the raw name is absent.
+
+5. Correct Edit empty-field behavior
+
+For onlineId and birthDate:
+
+- if the Account currently has a value and the user clears it, show a field validation error
+- do not construct a payload property with undefined
+- do not send an effectively empty request
+- unchanged values remain omitted
+- valid changed values are submitted normally
+
+Add focused tests for both fields.
+
+6. Reset Status Override state
+
+When the dialog closes externally or reopens:
+
+- clear selected action
+- clear previous error state
+
+Preserve the exact allowed payloads:
+
+- SOLD
+- INACTIVE
+- null
+
+Use the approved descriptions:
+
+SOLD:
+اکانت به‌صورت دستی فروخته‌شده در نظر گرفته می‌شود
+
+INACTIVE:
+اکانت از چرخه استفاده و فروش خارج می‌شود
+
+Clear:
+وضعیت دوباره از اطلاعات معتبر سیستم محاسبه می‌شود
+
+7. Correct phase documentation
+
+Update docs/CURRENT_PHASE.md to:
+
+Current sub-stage:
+PS-03D5-6A — Account Write Frontend Core Reconstruction
+
+Current status:
+IMPLEMENTATION COMPLETE, AWAITING SOURCE REVIEW
+
+Next planned sub-stage:
+PS-03D5-6B — Frontend Safety and Final Verification
+
+PS-03D5-7:
+NOT AUTHORIZED
+
+Do not mark PS-03D5-6A approved or closed.
+
+8. Remove incorrect follow-up direction
+
+Do not propose or implement:
+
+- mounting Account Write UI
+- removing ACCOUNT_OPS_DISABLED gates
+- enabling public mutation routes
+- Backup Code lifecycle
+- Secret Reveal
+- Auth, RBAC, Permission, or Audit
+- Orders or Assignment
+
+Runtime activation remains outside PS-03.
+
+## Required validation
+
+Run and capture complete output for:
+
+- pnpm install --frozen-lockfile
+- pnpm run typecheck
+- pnpm --filter @workspace/playsyncer run test
+- pnpm --filter @workspace/playsyncer run test -- --reporter=verbose
+- PORT=24351 BASE_PATH=/ pnpm --filter @workspace/playsyncer run build
+- git diff --check
+
+If Git metadata is absent, generate a recursive diff against the untouched approved baseline and perform a whitespace-error scan.
+
+Do not substitute a different typecheck or build command without reporting the original command failure first.
+
+## Required logs
+
+Update or create:
+
+- reports/ps03d5-6a-f1-execution-log.md
+- reports/ps03d5-6a-f1-validation-full.txt
+- reports/ps03d5-6a-f1.diff
+- reports/ps03d5-6a-f1-manifest.txt
+
+Include all failures, diagnoses, corrections, and reruns.
+
+## Final package
+
+Create:
+
+playsyncer-ps03d5-6a-f1-account-write-core-review.zip
+
+The ZIP must contain the complete PlaySyncer source based on the approved PS-03D5-5-F1 baseline, not only changed files.
+
+Exclude:
+
+- .git
+- node_modules
+- dist
+- build
+- coverage
+- caches
+- .env
+- Secrets
+- prompt files
+- attached_assets/Pasted-*
+- old or nested ZIP files
+- local agent memory
+- donor v4 directory
+
+Verify:
+
+- file
+- unzip -t
+- exact size
+- SHA-256
+- archive entry count
+- presence of root package.json, pnpm-lock.yaml, lib, artifacts, and docs
+
+A partial ZIP or Git LFS pointer is a packaging failure.
+
+## Final response
+
+Return:
+
+## Final Status
+
+Use exactly one:
+
+- PS-03D5-6A-F1 — CORRECTION COMPLETE, AWAITING SOURCE REVIEW
+- PS-03D5-6A-F1 — TEST OR BUILD FAILURE
+- PS-03D5-6A-F1 — CONTRACT CONFLICT
+- PS-03D5-6A-F1 — SENSITIVE DATA BLOCKER
+- PS-03D5-6A-F1 — SCOPE VIOLATION
+- PS-03D5-6A-F1 — PACKAGING FAILURE
+
+Then include:
+
+- exact files changed
+- Password-preservation proof
+- external-close clearing proof
+- duplicate-field safety proof
+- Edit empty-field validation proof
+- test counts
+- complete validation results
+- execution log
+- ZIP filename, size, SHA-256, entry count, and unzip result
+- final git status
+
+Do not commit.
+Do not start PS-03D5-6B automatically.

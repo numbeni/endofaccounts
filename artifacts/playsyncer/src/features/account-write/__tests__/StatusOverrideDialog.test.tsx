@@ -208,4 +208,43 @@ describe("StatusOverrideDialog", () => {
     await waitFor(() => screen.getByText(PERSIAN_GENERIC_MSG));
     expect(screen.queryByText("raw internal server error with SQL")).not.toBeInTheDocument();
   });
+
+  // ── State reset on close/reopen (PS-03D5-6A-F1) ───────────────────────────
+
+  it("clears selected action and previous error when closed externally", async () => {
+    const mutateAsync = vi.fn().mockRejectedValue(makeApiError("SOME_UNKNOWN_ERROR", 500));
+    vi.mocked(useSetAccountStatusOverride).mockReturnValue(makeMutation(mutateAsync));
+    const { rerender } = render(
+      <StatusOverrideDialog open accountId={accountId} onSuccess={onSuccess} onClose={onClose} />,
+    );
+    // Trigger an error
+    fireEvent.click(screen.getByText("غیرفعال"));
+    fireEvent.click(screen.getByText("اعمال"));
+    await waitFor(() => screen.getByText(PERSIAN_GENERIC_MSG));
+    // Close externally
+    rerender(
+      <StatusOverrideDialog open={false} accountId={accountId} onSuccess={onSuccess} onClose={onClose} />,
+    );
+    rerender(
+      <StatusOverrideDialog open accountId={accountId} onSuccess={onSuccess} onClose={onClose} />,
+    );
+    // No error message and no selected button remains active
+    expect(screen.queryByText(PERSIAN_GENERIC_MSG)).not.toBeInTheDocument();
+    expect(screen.queryByText("لطفاً یک گزینه انتخاب کنید")).not.toBeInTheDocument();
+    // Apply button is disabled because nothing is selected
+    const applyBtn = screen.getByText("اعمال");
+    expect(applyBtn).toBeDisabled();
+  });
+
+  it("uses the approved descriptions for SOLD, INACTIVE, and Clear", () => {
+    vi.mocked(useSetAccountStatusOverride).mockReturnValue(
+      makeMutation(vi.fn().mockResolvedValue({})),
+    );
+    render(
+      <StatusOverrideDialog open accountId={accountId} onSuccess={onSuccess} onClose={onClose} />,
+    );
+    expect(screen.getByText("اکانت به‌صورت دستی فروخته‌شده در نظر گرفته می‌شود")).toBeInTheDocument();
+    expect(screen.getByText("اکانت از چرخه استفاده و فروش خارج می‌شود")).toBeInTheDocument();
+    expect(screen.getByText("وضعیت دوباره از اطلاعات معتبر سیستم محاسبه می‌شود")).toBeInTheDocument();
+  });
 });
