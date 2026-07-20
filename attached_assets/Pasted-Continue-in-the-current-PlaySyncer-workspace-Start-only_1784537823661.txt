@@ -1,0 +1,229 @@
+Continue in the current PlaySyncer workspace.
+
+Start only:
+
+PS-03D5-6B — Frontend Safety and Final Verification
+
+PS-03D5-6A is considered complete. Do not rebuild or redesign the Account Write feature.
+
+Do not start PS-03D5-7.
+Do not activate Account mutations.
+Do not commit yet.
+
+## Objective
+
+Perform the final safety and verification pass for the Account Write frontend.
+
+Verify and minimally correct only proven issues related to:
+
+- runtime isolation
+- sensitive-data safety
+- safe API error handling
+- no-network tests
+- dialog accessibility
+- complete validation
+- final review packaging
+
+## Required checks
+
+Confirm that:
+
+- Account Write components are not mounted in active pages
+- active router and GameDetailPage remain read-only
+- public Account mutation routes still return ACCOUNT_OPS_DISABLED
+- no Delete request can be sent
+- Passwords and Backup Codes are never logged, persisted, placed in URLs, rendered in errors, or retained after close
+- DUPLICATE_WARNING and ACCOUNT_OPS_DISABLED use the real `error.data` contract
+- unknown errors show only the safe Persian generic message
+- tests make zero real network requests
+- no hidden feature flag, route, query parameter, or development bypass exists
+
+Strengthen tests only where current evidence is insufficient.
+
+## Dialog and UX verification
+
+Check:
+
+- RTL
+- keyboard focus
+- Escape behavior
+- nested Duplicate Warning dialog behavior
+- body scroll lock
+- focus restoration
+- loading and disabled states
+- mobile overflow
+- long email and Online ID handling
+- field errors connected to inputs
+
+Do not redesign unrelated pages.
+
+## Games regression check
+
+The previous HTTP 500 issue affecting Games was reportedly corrected.
+
+Briefly verify that:
+
+- Games list loads
+- Game details load
+- the related API endpoints no longer return HTTP 500
+- the Account Write work did not regress Games behavior
+
+Do not expand this into a new Games development task unless the 500 error still reproduces.
+
+## Scope restrictions
+
+Do not change:
+
+- backend contracts
+- OpenAPI
+- generated clients
+- schema
+- migrations
+- dependencies
+- lockfile
+- infrastructure
+- Account identifiers
+- Capacity templates
+
+Do not implement Auth, RBAC, Audit, Secret Reveal, Orders, Assignment, Capacity mutations, Hard Delete, WordPress, or WooCommerce integration.
+
+Do not run db:migrate.
+
+## Validation and logs
+
+Create:
+
+- reports/ps03d5-6b-safety-report.md
+- reports/ps03d5-6b-execution-log.md
+- reports/ps03d5-6b-validation-full.txt
+- reports/ps03d5-6b-coverage-matrix.md
+- reports/ps03d5-6b.diff
+- reports/ps03d5-6b-manifest.txt
+
+The execution log must be chronological and include:
+
+- files inspected
+- searches performed
+- findings
+- corrections
+- failures
+- diagnoses
+- reruns
+- Games regression check
+- final validation
+- packaging
+
+Capture complete stdout, stderr, exit codes, warnings, failures, retries, and test counts for:
+
+- pnpm install --frozen-lockfile
+- pnpm run typecheck
+- pnpm --filter @workspace/api-server run typecheck
+- pnpm --filter @workspace/api-server run test
+- pnpm --filter @workspace/api-server run build
+- pnpm --filter @workspace/db run test
+- pnpm --filter @workspace/db run test:migrations
+- pnpm --filter @workspace/playsyncer run test
+- pnpm --filter @workspace/playsyncer run test -- --reporter=verbose
+- PORT=24351 BASE_PATH=/ pnpm --filter @workspace/playsyncer run build
+- git diff --check
+
+Do not hide failed attempts.
+
+## Documentation
+
+After successful verification, update docs/CURRENT_PHASE.md to:
+
+Current sub-stage:
+PS-03D5-6B — Frontend Safety and Final Verification
+
+Current status:
+VERIFICATION COMPLETE, AWAITING SOURCE REVIEW
+
+Parent:
+PS-03D5-6 — Account Write Frontend, Runtime Disabled
+
+Parent status:
+NOT CLOSED UNTIL PS-03D5-6B SOURCE REVIEW
+
+Next:
+PS-03D5-7 — Account Mutation Verification and PS-03D5 Closure
+
+PS-03D5-7:
+NOT AUTHORIZED
+
+Do not mark PS-03D5-6 approved or closed.
+
+## Review package
+
+Create:
+
+playsyncer-ps03d5-6b-frontend-safety-review.zip
+
+The ZIP must contain the complete current PlaySyncer source.
+
+Exclude:
+
+- .git
+- node_modules
+- dist
+- build
+- coverage
+- caches
+- .env
+- Secrets
+- .agents
+- .local
+- prompt files
+- attached_assets/Pasted-*
+- old or nested ZIP files
+
+Verify:
+
+- file
+- unzip -t
+- exact size
+- SHA-256
+- archive entry count
+- root package.json
+- pnpm-lock.yaml
+- lib/
+- artifacts/
+- docs/
+- reports/
+
+## Final response
+
+Return:
+
+## Final Status
+
+Use exactly one:
+
+- PS-03D5-6B — VERIFICATION COMPLETE, AWAITING SOURCE REVIEW
+- PS-03D5-6B — TEST OR BUILD FAILURE
+- PS-03D5-6B — FRONTEND SAFETY BLOCKER
+- PS-03D5-6B — SENSITIVE DATA BLOCKER
+- PS-03D5-6B — RUNTIME ACTIVATION BLOCKER
+- PS-03D5-6B — NETWORK SAFETY BLOCKER
+- PS-03D5-6B — GAMES REGRESSION
+- PS-03D5-6B — SCOPE VIOLATION
+- PS-03D5-6B — PACKAGING FAILURE
+
+Then report:
+
+- files inspected and changed
+- runtime-isolation proof
+- sensitive-data proof
+- API error-contract proof
+- accessibility findings
+- no-network proof
+- Games regression result
+- exact test counts
+- complete validation results
+- execution log summary
+- remaining issues
+- ZIP filename, size, SHA-256, entry count, and unzip result
+- git status --short
+
+Do not commit.
+Do not start PS-03D5-7 automatically.

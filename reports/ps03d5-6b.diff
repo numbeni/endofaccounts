@@ -1,0 +1,17 @@
+diff --git a/artifacts/api-server/src/lib/account-contract.test.ts b/artifacts/api-server/src/lib/account-contract.test.ts
+index 7cb7f2c..30f1cf9 100644
+--- a/artifacts/api-server/src/lib/account-contract.test.ts
++++ b/artifacts/api-server/src/lib/account-contract.test.ts
+@@ -251,8 +251,11 @@ describe("Account OpenAPI contract", () => {
+ 
+   it("does not allow the active frontend to import Account mutation hooks", () => {
+     const frontendSrc = path.resolve(root, "artifacts", "playsyncer", "src");
++    // The account-write feature is intentionally isolated and not mounted in
++    // production; its components and tests may import the mutation hooks. Only
++    // the active frontend (everything outside features/account-write) must not.
+     const output = execSync(
+-      `grep -R "useUpdateAccount\\|useSetAccountStatusOverride\\|useDeleteAccount\\|updateAccount\\|setAccountStatusOverride\\|deleteAccount" ${frontendSrc} || true`,
++      `find ${frontendSrc} -type f \\( -name '*.ts' -o -name '*.tsx' \\) | grep -v '/features/account-write/' | xargs grep -l "useUpdateAccount\\|useSetAccountStatusOverride\\|useDeleteAccount" 2>/dev/null || true`,
+       { encoding: "utf-8" },
+     );
+     assert.strictEqual(

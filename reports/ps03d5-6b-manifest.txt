@@ -1,0 +1,42 @@
+=== PS-03D5-6B FRONTEND SAFETY AND FINAL VERIFICATION MANIFEST ===
+Generated: 2026-07-20
+
+=== Safety boundary files (all verified read-only / not mounted) ===
+artifacts/playsyncer/src/App.tsx
+artifacts/playsyncer/src/main.tsx
+artifacts/playsyncer/src/pages/GameDetailPage.tsx
+artifacts/playsyncer/src/components/AccountCardReadOnly.tsx
+artifacts/playsyncer/src/components/AccountDetailsReadOnly.tsx
+
+=== Isolated Account Write feature (not mounted) ===
+artifacts/playsyncer/src/features/account-write/index.ts
+artifacts/playsyncer/src/features/account-write/CreateAccountDialog.tsx
+artifacts/playsyncer/src/features/account-write/EditAccountDialog.tsx
+artifacts/playsyncer/src/features/account-write/DuplicateWarningDialog.tsx
+artifacts/playsyncer/src/features/account-write/StatusOverrideDialog.tsx
+artifacts/playsyncer/src/features/account-write/DeleteUnavailableDialog.tsx
+artifacts/playsyncer/src/features/account-write/parseApiError.ts
+artifacts/playsyncer/src/features/account-write/validateBirthDate.ts
+
+=== Account Write feature tests ===
+artifacts/playsyncer/src/features/account-write/__tests__/CreateAccountDialog.test.tsx
+artifacts/playsyncer/src/features/account-write/__tests__/EditAccountDialog.test.tsx
+artifacts/playsyncer/src/features/account-write/__tests__/DuplicateWarningDialog.test.tsx
+artifacts/playsyncer/src/features/account-write/__tests__/StatusOverrideDialog.test.tsx
+artifacts/playsyncer/src/features/account-write/__tests__/DeleteUnavailableDialog.test.tsx
+artifacts/playsyncer/src/features/account-write/__tests__/isolation.test.tsx
+artifacts/playsyncer/src/features/account-write/__tests__/parseApiError.test.ts
+artifacts/playsyncer/src/features/account-write/__tests__/validateBirthDate.test.ts
+
+=== Backend fail-closed routes (verified) ===
+artifacts/api-server/src/routes/accounts.ts
+artifacts/api-server/src/lib/account-contract.test.ts
+
+=== Verification outputs ===
+reports/ps03d5-6b-validation-full.txt
+reports/ps03d5-6b-frontend-safety-review-report.md
+reports/ps03d5-6b-manifest.txt
+reports/ps03d5-6b.diff
+
+docs/CURRENT_PHASE.md
+docs/DECISION_LOG.md

@@ -1422,3 +1422,56 @@ PS-03D5-5-F1 — Account Delete Fail-Closed Correction is approved and closed af
   - Frontend: 47/47
 - Typechecks, API build, frontend production build, OpenAPI code generation, and `git diff --check` passed in the review validation run.
 - Final closure changes are documentation and packaging only; no runtime source, schema, migration, generated API, or test behavior changed after the approved validation run.
+
+## 2026-07-20 — PS-03D5-6B Closure
+
+PS-03D5-6B — Frontend Safety and Final Verification is approved and closed.
+
+### Verification results
+
+- Account Write components are isolated and not mounted in the active frontend (`App.tsx`, `GameDetailPage`, `AccountCardReadOnly`, `AccountDetailsReadOnly`).
+- The active frontend remains read-only; no create/edit/delete/status controls for Accounts are rendered.
+- Public Account mutation routes remain runtime-disabled:
+  - `POST /api/games/{gameId}/accounts` → 403 `ACCOUNT_OPS_DISABLED`
+  - `PATCH /api/accounts/{accountId}` → 403 `ACCOUNT_OPS_DISABLED`
+  - `PATCH /api/accounts/{accountId}/status-override` → 403 `ACCOUNT_OPS_DISABLED`
+  - `DELETE /api/accounts/{accountId}` → 403 `ACCOUNT_OPS_DISABLED`
+- `DeleteUnavailableDialog` sends zero DELETE requests and does not remove Accounts from local state.
+- Passwords and backup codes are cleared from React state after success, close, or Account switch in Create/Edit dialogs.
+- `DUPLICATE_WARNING` and `ACCOUNT_OPS_DISABLED` are detected from `error.data.code`, not from `Error.message` or `error.response`.
+- Unknown errors display the safe Persian generic message `PERSIAN_GENERIC_MSG`.
+- Frontend tests make zero real network requests; `setup.ts` mocks `fetch` and asserts it is never called.
+- No hidden feature flags, bypass routes, or environment switches were found.
+- Games regression check in the dev workspace returned HTTP 200 for both `/api/games` and `/api/games/{id}`.
+
+### Validation evidence
+
+The final PS-03D5-6B validation run passed 354 automated tests with 0 failures:
+
+- API server: 139/139
+- DB helpers: 16/16
+- DB migrations: 38/38
+- Frontend: 161/161
+
+Typechecks, API build, and frontend production build passed. `git diff --check` passed.
+
+### One test fix applied during 6B
+
+The API contract test `does not allow the active frontend to import Account mutation hooks` was updated to exclude the intentionally isolated `features/account-write` package. The previous broad `grep -R` produced false positives because the isolated feature (and its tests) legitimately import `useUpdateAccount`. The corrected test only asserts that the active frontend (everything outside `features/account-write`) does not import Account mutation hooks. No production boundary was relaxed.
+
+### Closure status
+
+- PS-03D5-6B is `APPROVED_AND_CLOSED`.
+- PS-03D5 is `APPROVED_AND_CLOSED`.
+- The next authorized sub-stage is `PS-03D5-7`, which is `NOT AUTHORIZED`.
+- Runtime activation of Account mutations remains deferred to a future Security phase outside PS-03.
+- Hard Delete remains unavailable until a future Orders / Assignment phase provides an authoritative Assignment History contract and receives explicit Command Center approval.
+
+### Deliverables
+
+- `playsyncer-ps03d5-6b-frontend-safety-review.zip`
+- `reports/ps03d5-6b-frontend-safety-review-report.md`
+- `reports/ps03d5-6b-manifest.txt`
+- `reports/ps03d5-6b.diff`
+- `reports/ps03d5-6b-validation-full.txt`
+- `docs/CURRENT_PHASE.md` updated to reflect PS-03D5-6B closure.

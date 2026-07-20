@@ -1,0 +1,210 @@
+Continue in the current PlaySyncer workspace.
+
+Perform only:
+
+1. Fix the HTTP 500 error that currently prevents Games from loading or being viewed.
+2. Formally close PS-03D5-6A.
+3. Create a complete closed ZIP for the next chat.
+
+Do not start PS-03D5-6B or PS-03D5-7.
+Do not activate Account mutations.
+Do not redesign or refactor unrelated code.
+
+## HTTP 500 diagnosis and correction
+
+First reproduce the failure and identify the exact failing request using:
+
+- browser/network evidence where available
+- API server logs
+- the exact Games endpoint
+- related route, service, database query, environment configuration, and generated client code
+
+Do not guess the cause.
+
+Separate:
+
+- confirmed root cause
+- assumptions
+- affected files
+- risk
+- minimal correction
+
+Fix only the confirmed root cause with the smallest safe change.
+
+Do not:
+
+- hide the error with fake data
+- weaken validation
+- change database schema or migrations
+- remove security checks
+- activate Account mutation routes
+- modify unrelated Games or Account behavior
+- run db:migrate
+- clean or delete development data
+
+After the correction, prove that:
+
+- Games list loads successfully
+- Game details load successfully
+- the failing endpoint no longer returns HTTP 500
+- valid requests return the expected response
+- invalid requests still follow the existing error contract
+- no sensitive internal error is exposed to the frontend
+
+Add or update a focused regression test for the confirmed root cause.
+
+## Preserve PS-03D5-6A
+
+Verify that the approved Account Write frontend still has:
+
+- Create Account UI
+- Edit Account UI
+- Duplicate Warning flow
+- Status Override UI
+- Delete Unavailable UI
+- exact Password preservation
+- sensitive-state clearing
+- strict birth-date validation
+- safe API error mapping
+- zero DELETE requests
+- no mounting in active production pages
+
+Do not change this implementation unless the HTTP 500 root cause directly requires it.
+
+## Validation and logs
+
+Create:
+
+- reports/http500-games-fix-report.md
+- reports/ps03d5-6a-closure-execution-log.md
+- reports/ps03d5-6a-closure-validation-full.txt
+
+The execution log must be chronological and include:
+
+- reproduction
+- failing endpoint
+- logs inspected
+- confirmed root cause
+- files changed
+- failed attempts
+- correction
+- test reruns
+- final validation
+- packaging
+
+Capture complete stdout, stderr, exit codes, warnings, failures, and retries for:
+
+- pnpm install --frozen-lockfile
+- pnpm run typecheck
+- pnpm --filter @workspace/api-server run typecheck
+- pnpm --filter @workspace/api-server run test
+- pnpm --filter @workspace/api-server run build
+- pnpm --filter @workspace/db run test
+- pnpm --filter @workspace/db run test:migrations
+- pnpm --filter @workspace/playsyncer run test
+- PORT=24351 BASE_PATH=/ pnpm --filter @workspace/playsyncer run build
+- git diff --check
+
+Do not claim a command passed unless it was actually executed.
+
+## Phase closure
+
+After all validations pass, update docs/CURRENT_PHASE.md:
+
+Current stage:
+PS-03D5 — Account Mutation Implementation, Runtime Disabled
+
+Completed sub-stage:
+PS-03D5-6A — Account Write Frontend Core Reconstruction
+
+Completed correction:
+PS-03D5-6A-F1 — Account Write Core Contract and Safety Correction
+
+Status:
+APPROVED_AND_CLOSED
+
+Next sub-stage:
+PS-03D5-6B — Frontend Safety and Final Verification
+
+PS-03D5-6B status:
+READY TO START IN A NEW CHAT
+
+PS-03D5-7:
+NOT AUTHORIZED
+
+Update docs/DECISION_LOG.md with:
+
+- the confirmed HTTP 500 root cause and correction
+- PS-03D5-6A closure
+- confirmation that Account Write remains unmounted and runtime-disabled
+
+## Commit and package
+
+If valid Git metadata exists, create one commit:
+
+fix(games): resolve HTTP 500 and close PS-03D5-6A
+
+Create:
+
+playsyncer-ps03d5-6a-closed.zip
+
+The ZIP must contain the complete PlaySyncer source.
+
+Exclude:
+
+- .git
+- node_modules
+- dist
+- build
+- coverage
+- caches
+- .env
+- Secrets
+- .agents
+- .local
+- attached_assets/Pasted-*
+- prompt files
+- old or nested ZIP files
+
+Verify:
+
+- file
+- unzip -t
+- exact byte size
+- SHA-256
+- archive entry count
+- root package.json
+- pnpm-lock.yaml
+- lib/
+- artifacts/
+- docs/
+- reports/
+
+## Final response
+
+Return:
+
+## Final Status
+
+Use exactly one:
+
+- PS-03D5-6A — APPROVED AND CLOSED
+- PS-03D5-6A — HTTP 500 ROOT CAUSE NOT CONFIRMED
+- PS-03D5-6A — TEST OR BUILD FAILURE
+- PS-03D5-6A — CLOSURE FAILURE
+- PS-03D5-6A — SCOPE VIOLATION
+- PS-03D5-6A — PACKAGING FAILURE
+
+Then report:
+
+- exact HTTP 500 root cause
+- exact files changed
+- regression test added
+- Games runtime proof
+- complete validation results
+- Account Write preservation proof
+- commit SHA and message
+- ZIP filename, size, SHA-256, entry count, and unzip result
+- final git status
+
+Do not start PS-03D5-6B automatically.
