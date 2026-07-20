@@ -256,7 +256,7 @@ async function acquireDuplicateLocks(
     ),
     deriveAdvisoryLockId(
       hashForLookup(
-        normalizeEmail(input.onlineId),
+        normalizeOnlineId(input.onlineId).toLowerCase(),
         keys.lookupHashKey,
       ),
     ),
@@ -607,7 +607,10 @@ async function acquireDuplicateLocksForUpdate(
   if (changed.onlineId !== undefined) {
     tokens.push(
       deriveAdvisoryLockId(
-        hashForLookup(normalizeOnlineId(changed.onlineId), keys.lookupHashKey),
+        hashForLookup(
+          normalizeOnlineId(changed.onlineId).toLowerCase(),
+          keys.lookupHashKey,
+        ),
       ),
     );
   }
@@ -737,9 +740,9 @@ export async function updateAccount(
 
     if (parsed.onlineId !== undefined) {
       const normalized = normalizeOnlineId(parsed.onlineId);
-      if (
-        normalized.toLowerCase() !== (account.onlineId ?? "").toLowerCase()
-      ) {
+      // Case-only changes must still update the stored casing; duplicate checks
+      // against other Accounts remain case-insensitive via the lock/hash flow.
+      if (normalized !== account.onlineId) {
         updates.onlineId = normalized;
         changedLookupFields.onlineId = normalized;
       }

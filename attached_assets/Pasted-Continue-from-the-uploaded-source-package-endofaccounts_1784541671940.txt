@@ -1,0 +1,291 @@
+Continue from the uploaded source package:
+
+endofaccounts-main.zip
+
+This package contains an incomplete implementation of:
+
+PS-03D5-7 — Account Create/Edit Runtime Integration and Verification
+
+Do not restart the phase.
+Do not discard the current Create/Edit wiring.
+Inspect the complete source and preserve valid partial work.
+
+Before responding, do not rush. First deeply inspect the source, dependencies, runtime gates, frontend wiring, backend routes, tests, documentation, risks, and side effects. Do not make claims without source, log, diff, test, or runtime evidence. Separate Facts, Assumptions, Risks, and Recommendations.
+
+## Confirmed partial implementation
+
+The current source already contains:
+
+- Add Account control in GameDetailPage
+- CreateAccountDialog mounting
+- Edit controls in AccountCardReadOnly and AccountDetailsReadOnly
+- EditAccountDialog mounting
+- list/detail query invalidation
+- partial backend runtime mounting
+- frontend integration tests
+
+Treat this work as unreviewed partial implementation, not as approved code.
+
+## Required corrections
+
+### 1. Fail-closed runtime activation
+
+Replace the current default-enabled environment logic.
+
+Backend Create and Update routes must be enabled only when all of the following are true:
+
+- `PLAYSYNCER_ACCOUNT_MUTATIONS_ENABLED === "true"`
+- `NODE_ENV !== "production"`
+- `REPLIT_ENVIRONMENT !== "production"`
+
+Missing, unknown, empty, or invalid values must keep mutations disabled.
+
+Production must remain disabled even if the enable flag is accidentally set.
+
+Add tests proving:
+
+- missing flag → 403 and zero writes
+- false flag → 403 and zero writes
+- explicit true in development/test → Create and Update work
+- explicit true in production → 403 and zero writes
+
+Do not enable Status Override in this sub-stage.
+Do not enable Delete.
+
+### 2. Frontend activation boundary
+
+Show and mount Add/Edit controls only when:
+
+- Vite is running in development mode
+- `VITE_PLAYSYNCER_ACCOUNT_MUTATIONS_ENABLED === "true"`
+
+Otherwise the active frontend must remain read-only.
+
+Do not show non-working Write controls in a production build.
+
+Document the required non-secret development flags, but do not create or package `.env` files.
+
+### 3. Online ID concurrency and case preservation
+
+Fix the previously documented pre-activation blocker:
+
+- store Online ID with its entered casing after trimming
+- compare duplicates case-insensitively
+- generate Create and Update advisory-lock tokens from the same trimmed lowercase lookup value
+- allow a case-only edit to update the displayed casing
+- do not treat the same Account as its own duplicate
+
+Add focused tests, including concurrent or controlled case-variant duplicate attempts.
+
+Do not add a schema change or migration unless direct evidence proves one is required. Report a blocker instead of inventing one.
+
+### 4. Sensitive server logging
+
+Fix the previously documented server-log blocker.
+
+Unexpected Account Create/Update errors must:
+
+- return the existing safe 500 contract
+- never log plaintext passwords, emails, backup codes, request bodies, database parameter arrays, encryption keys, or sensitive SQL details
+- retain enough safe context for diagnosis, such as operation name and safe error category
+
+Add focused redaction tests.
+
+Do not log or expose `PLAYSYNCER_ACCOUNT_MASTER_KEY`.
+
+### 5. Cross-Game state safety
+
+When `gameId` changes or GameDetailPage unmounts:
+
+- close CreateAccountDialog
+- close EditAccountDialog
+- clear selected Account IDs
+- clear pending duplicate confirmation state
+- clear passwords, emails, and backup codes
+- prevent an old form from submitting to the new Game
+
+Add regression tests.
+
+### 6. Inactive Game behavior
+
+When the Game is INACTIVE:
+
+- Add Account must be disabled
+- the operator must receive a short safe Persian explanation
+- no Create request may be sent
+
+Keep backend enforcement unchanged.
+
+### 7. Games regression and safe errors
+
+Verify that:
+
+- Games list loads
+- Game details load
+- Account list loads
+- the previous HTTP 500 does not reproduce
+
+Replace raw `error.message` rendering in GamesPage and GameDetailPage with the existing safe Persian API-error formatter.
+
+Do not expose hostnames, SQL, URLs, stack traces, or internal server messages.
+
+### 8. Create/Edit integration proof
+
+Using the real public router against the disposable PostgreSQL test database, prove:
+
+Create:
+- request succeeds only with the explicit development flag
+- Account is persisted
+- Account appears in the list response
+- capacities and backup codes are created correctly
+- response contains no secrets
+
+Edit:
+- values persist
+- values remain changed after a fresh GET
+- Password values are preserved exactly
+- duplicate confirmation works once without a retry loop
+- list/detail queries refresh correctly
+
+Delete and Status Override must remain disabled.
+
+Do not run `db:migrate`.
+Do not write test data to staging or production.
+
+## Scope restrictions
+
+Do not implement:
+
+- Auth
+- RBAC
+- Admin Levels
+- Audit Log
+- Secret Reveal
+- Backup Code Reveal
+- Status Override UI activation
+- Hard Delete
+- Orders
+- Assignment
+- Capacity mutations
+- WordPress or WooCommerce integration
+
+Do not change OpenAPI, generated clients, schema, migrations, dependencies, lockfile, encryption format, Account identifiers, or Capacity templates unless a direct contract conflict is proven. Report such a conflict before changing it.
+
+## Documentation
+
+Record the Command Center decision accurately:
+
+- Create and Edit may be explicitly enabled only in Development for integration testing
+- activation is opt-in and fail-closed
+- Production remains disabled
+- Auth, RBAC, and Audit Log remain planned for later phases
+- Status Override and Delete remain disabled
+
+Update `docs/CURRENT_PHASE.md` to:
+
+Current sub-stage:
+PS-03D5-7 — Account Create/Edit Runtime Integration and Verification
+
+Status:
+IMPLEMENTATION COMPLETE, AWAITING SOURCE REVIEW
+
+PS-03D5:
+NOT CLOSED
+
+Do not mark PS-03D5-7 approved or closed.
+
+## Validation and evidence
+
+Create:
+
+- reports/ps03d5-7-execution-log.md
+- reports/ps03d5-7-validation-full.txt
+- reports/ps03d5-7-runtime-verification.md
+- reports/ps03d5-7-security-gate-report.md
+- reports/ps03d5-7.diff
+- reports/ps03d5-7-manifest.txt
+
+Run and capture complete stdout, stderr, duration, exit code, warnings, failures, retries, and test counts for:
+
+- pnpm install --frozen-lockfile
+- pnpm run typecheck
+- pnpm --filter @workspace/api-server run typecheck
+- pnpm --filter @workspace/api-server run test
+- pnpm --filter @workspace/api-server run build
+- pnpm --filter @workspace/db run test
+- pnpm --filter @workspace/db run test:migrations
+- pnpm --filter @workspace/playsyncer run test
+- pnpm --filter @workspace/playsyncer run test -- --reporter=verbose
+- PORT=24351 BASE_PATH=/ pnpm --filter @workspace/playsyncer run build
+- git diff --check
+
+Never hide failures or invent command output.
+
+## Package
+
+Create the complete source package:
+
+playsyncer-ps03d5-7-account-create-edit-review.zip
+
+Exclude:
+
+- .git
+- node_modules
+- dist
+- build
+- coverage
+- caches
+- `.env` files
+- secrets
+- `.agents`
+- `.local`
+- attached_assets/Pasted-*
+- old or nested ZIP files
+
+Verify:
+
+- file type
+- unzip -t
+- exact byte size
+- SHA-256
+- archive entry count
+- package.json
+- pnpm-lock.yaml
+- lib/
+- artifacts/
+- docs/
+- reports/
+
+## Final response
+
+Use exactly one status:
+
+- PS-03D5-7 — IMPLEMENTATION COMPLETE, AWAITING SOURCE REVIEW
+- PS-03D5-7 — RUNTIME GATE BLOCKER
+- PS-03D5-7 — SENSITIVE LOGGING BLOCKER
+- PS-03D5-7 — DATA INTEGRITY BLOCKER
+- PS-03D5-7 — CONTRACT CONFLICT
+- PS-03D5-7 — TEST OR BUILD FAILURE
+- PS-03D5-7 — GAMES REGRESSION
+- PS-03D5-7 — SCOPE VIOLATION
+- PS-03D5-7 — PACKAGING FAILURE
+
+Then report:
+
+- valid partial work preserved
+- exact files changed
+- backend and frontend gate behavior
+- Online ID correction evidence
+- logging-redaction evidence
+- cross-Game state-clearing evidence
+- Create/Edit persistence proof
+- Games regression result
+- exact test counts
+- complete validation results
+- failed attempts and warnings
+- remaining risks
+- ZIP filename, size, SHA-256, entry count, and unzip result
+- git status --short
+
+Do not commit.
+Do not close PS-03D5 automatically.

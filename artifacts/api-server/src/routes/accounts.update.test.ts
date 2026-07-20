@@ -89,6 +89,9 @@ describe("Update Account handler", { concurrency: 1 }, () => {
     // Load modules that depend on @workspace/db only after the disposable test
     // database URL is set, so the production DB connection architecture is not
     // modified to accommodate tests.
+    // Load modules that depend on @workspace/db only after the disposable test
+    // database URL is set, so the production DB connection architecture is not
+    // modified to accommodate tests.
     const accountsModule = await import("./accounts.ts");
     createAccountHandler = accountsModule.createAccountHandler;
     updateAccountHandler = accountsModule.updateAccountHandler;

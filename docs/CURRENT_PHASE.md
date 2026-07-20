@@ -19,18 +19,24 @@ PS-03D5-6A — Account Write Frontend Core Reconstruction
 Previous sub-stage status:
 APPROVED_AND_CLOSED
 
-Current sub-stage:
+Previous completed sub-stage:
 PS-03D5-6B — Frontend Safety and Final Verification
 
+Previous sub-stage status:
+APPROVED_AND_CLOSED
+
+Current sub-stage:
+PS-03D5-7 — Account Create/Edit Runtime Integration and Verification
+
 Current status:
-PS-03D5-6B — APPROVED_AND_CLOSED
+IMPLEMENTATION COMPLETE, AWAITING SOURCE REVIEW
 
-Next planned sub-stage:
-PS-03D5-7 — NOT AUTHORIZED
+PS-03D5:
+NOT CLOSED
 
-PS-03D5-7:
-NOT AUTHORIZED
-
-Runtime activation of Account mutations remains deferred to a future Security phase outside PS-03.
-
-Hard Delete remains unavailable until a future Orders / Assignment phase provides an authoritative Assignment History contract and receives explicit Command Center approval.
+Command Center decision:
+- Create and Edit may be explicitly enabled only in Development for integration testing.
+- Activation is opt-in and fail-closed (requires `PLAYSYNCER_ACCOUNT_MUTATIONS_ENABLED === "true"`, `NODE_ENV !== "production"`, and `REPLIT_ENVIRONMENT !== "production"`).
+- Production remains disabled even if the enable flag is accidentally set.
+- Auth, RBAC, and Audit Log remain planned for later phases.
+- Status Override and Delete remain disabled.

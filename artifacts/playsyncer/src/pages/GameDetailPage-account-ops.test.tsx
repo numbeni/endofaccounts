@@ -48,6 +48,11 @@ vi.mock("@tanstack/react-query", async () => {
   };
 });
 
+vi.mock("@/features/account-write/accountMutationsEnabled", () => ({
+  accountMutationsEnabled: vi.fn().mockReturnValue(true),
+  PERSIAN_INACTIVE_GAME_CREATE_DISABLED: "بازی غیرفعال است. برای افزودن اکانت، ابتدا بازی را فعال کنید.",
+}));
+
 vi.mock("@/features/account-write", async () => {
   return {
     CreateAccountDialog: (props: {

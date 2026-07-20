@@ -1,0 +1,1130 @@
+
+> @workspace/api-server@0.0.0 test /home/runner/workspace/artifacts/api-server
+> for f in src/lib/*.test.ts src/routes/*.test.ts src/services/**/*.test.ts; do tsx --test "$f" || exit 1; done
+
+TAP version 13
+# Subtest: Account OpenAPI contract
+    # Subtest: generates a valid client from OpenAPI
+    ok 1 - generates a valid client from OpenAPI
+      ---
+      duration_ms: 2580.20027
+      ...
+    # Subtest: includes all required Account schemas
+    ok 2 - includes all required Account schemas
+      ---
+      duration_ms: 0.746965
+      ...
+    # Subtest: does not expose secret fields in safe Account DTO schemas
+    ok 3 - does not expose secret fields in safe Account DTO schemas
+      ---
+      duration_ms: 0.578256
+      ...
+    # Subtest: does not expose matched values or Account IDs in DuplicateWarningResponse
+    ok 4 - does not expose matched values or Account IDs in DuplicateWarningResponse
+      ---
+      duration_ms: 0.442481
+      ...
+    # Subtest: includes only approved read-only Account hooks
+    ok 5 - includes only approved read-only Account hooks
+      ---
+      duration_ms: 0.539483
+      ...
+    # Subtest: includes only approved read-only Account paths in OpenAPI
+    ok 6 - includes only approved read-only Account paths in OpenAPI
+      ---
+      duration_ms: 0.394451
+      ...
+    # Subtest: does not allow the active frontend to import Delete or Status Override Account mutation hooks
+    ok 7 - does not allow the active frontend to import Delete or Status Override Account mutation hooks
+      ---
+      duration_ms: 32.329061
+      ...
+    1..7
+ok 1 - Account OpenAPI contract
+  ---
+  duration_ms: 2616.631115
+  type: 'suite'
+  ...
+1..1
+# tests 7
+# suites 1
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2914.272625
+TAP version 13
+# Subtest: crypto utilities
+    # Subtest: encrypt/decrypt round-trips plaintext
+    ok 1 - encrypt/decrypt round-trips plaintext
+      ---
+      duration_ms: 2.847156
+      ...
+    # Subtest: encrypt produces different ciphertext for the same plaintext (random IV)
+    ok 2 - encrypt produces different ciphertext for the same plaintext (random IV)
+      ---
+      duration_ms: 0.44763
+      ...
+    # Subtest: decrypt fails with the wrong key
+    ok 3 - decrypt fails with the wrong key
+      ---
+      duration_ms: 0.853717
+      ...
+    # Subtest: decrypt fails on tampered ciphertext (auth tag check)
+    ok 4 - decrypt fails on tampered ciphertext (auth tag check)
+      ---
+      duration_ms: 0.378026
+      ...
+    # Subtest: rejects keys that are not exactly 32 bytes
+    ok 5 - rejects keys that are not exactly 32 bytes
+      ---
+      duration_ms: 0.191995
+      ...
+    # Subtest: hashForLookup is deterministic for the same key and input
+    ok 6 - hashForLookup is deterministic for the same key and input
+      ---
+      duration_ms: 0.363961
+      ...
+    # Subtest: hashForLookup differs for different inputs or keys
+    ok 7 - hashForLookup differs for different inputs or keys
+      ---
+      duration_ms: 0.222634
+      ...
+    # Subtest: hashForLookup output looks like a hex sha256 digest
+    ok 8 - hashForLookup output looks like a hex sha256 digest
+      ---
+      duration_ms: 0.363267
+      ...
+    1..8
+ok 1 - crypto utilities
+  ---
+  duration_ms: 7.018608
+  type: 'suite'
+  ...
+1..1
+# tests 8
+# suites 1
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 266.71923
+TAP version 13
+# Subtest: redactForLog
+    # Subtest: redacts plaintext passwords
+    ok 1 - redacts plaintext passwords
+      ---
+      duration_ms: 1.837057
+      ...
+    # Subtest: redacts email addresses
+    ok 2 - redacts email addresses
+      ---
+      duration_ms: 0.178891
+      ...
+    # Subtest: redacts backup codes as a whole
+    ok 3 - redacts backup codes as a whole
+      ---
+      duration_ms: 0.121518
+      ...
+    # Subtest: redacts encryption keys and master key
+    ok 4 - redacts encryption keys and master key
+      ---
+      duration_ms: 0.188893
+      ...
+    # Subtest: redacts SQL details from strings
+    ok 5 - redacts SQL details from strings
+      ---
+      duration_ms: 0.216209
+      ...
+    # Subtest: redacts request bodies and parameter arrays
+    ok 6 - redacts request bodies and parameter arrays
+      ---
+      duration_ms: 0.149872
+      ...
+    # Subtest: preserves safe primitive values
+    ok 7 - preserves safe primitive values
+      ---
+      duration_ms: 0.133373
+      ...
+    # Subtest: redacts nested Error objects
+    ok 8 - redacts nested Error objects
+      ---
+      duration_ms: 1.367154
+      ...
+    1..8
+ok 1 - redactForLog
+  ---
+  duration_ms: 5.535749
+  type: 'suite'
+  ...
+# Subtest: safeAccountErrorContext
+    # Subtest: returns safe operation context without secrets
+    ok 1 - returns safe operation context without secrets
+      ---
+      duration_ms: 0.596393
+      ...
+    1..1
+ok 2 - safeAccountErrorContext
+  ---
+  duration_ms: 0.762394
+  type: 'suite'
+  ...
+1..2
+# tests 9
+# suites 2
+# pass 9
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 304.205448
+TAP version 13
+# Subtest: Create Account handler
+    # Subtest: public POST /games/:gameId/accounts returns 403 and writes nothing
+    ok 1 - public POST /games/:gameId/accounts returns 403 and writes nothing
+      ---
+      duration_ms: 68.120092
+      ...
+    # Subtest: valid request returns HTTP 201 and safe AccountDetailResponse
+    ok 2 - valid request returns HTTP 201 and safe AccountDetailResponse
+      ---
+      duration_ms: 63.545607
+      ...
+    # Subtest: creates expected Capacity template and Backup Codes
+    ok 3 - creates expected Capacity template and Backup Codes
+      ---
+      duration_ms: 22.793954
+      ...
+    # Subtest: missing Game returns HTTP 404
+    ok 4 - missing Game returns HTTP 404
+      ---
+      duration_ms: 7.536993
+      ...
+    # Subtest: deleted Game returns HTTP 404
+    ok 5 - deleted Game returns HTTP 404
+      ---
+      duration_ms: 11.484359
+      ...
+    # Subtest: inactive Game returns HTTP 409 StandardApiError and writes nothing
+    ok 6 - inactive Game returns HTTP 409 StandardApiError and writes nothing
+      ---
+      duration_ms: 23.514688
+      ...
+    # Subtest: invalid UUID returns HTTP 400
+    ok 7 - invalid UUID returns HTTP 400
+      ---
+      duration_ms: 3.073008
+      ...
+    # Subtest: invalid Email returns HTTP 400
+    ok 8 - invalid Email returns HTTP 400
+      ---
+      duration_ms: 11.605564
+      ...
+    # Subtest: invalid birthDate returns HTTP 400
+    ok 9 - invalid birthDate returns HTTP 400
+      ---
+      duration_ms: 8.807591
+      ...
+    # Subtest: empty Backup Code array returns HTTP 400
+    ok 10 - empty Backup Code array returns HTTP 400
+      ---
+      duration_ms: 10.394614
+      ...
+    # Subtest: whitespace-only Backup Code returns HTTP 400
+    ok 11 - whitespace-only Backup Code returns HTTP 400
+      ---
+      duration_ms: 10.662815
+      ...
+    # Subtest: unexpected body fields are rejected
+    ok 12 - unexpected body fields are rejected
+      ---
+      duration_ms: 10.643397
+      ...
+    # Subtest: malformed JSON body returns HTTP 400 INVALID_JSON and performs zero writes
+    ok 13 - malformed JSON body returns HTTP 400 INVALID_JSON and performs zero writes
+      ---
+      duration_ms: 18.823286
+      ...
+    # Subtest: body gameId is rejected as an unexpected field with zero writes
+    ok 14 - body gameId is rejected as an unexpected field with zero writes
+      ---
+      duration_ms: 32.009742
+      ...
+    # Subtest: statusOverride is rejected
+    ok 15 - statusOverride is rejected
+      ---
+      duration_ms: 13.082864
+      ...
+    # Subtest: duplicate warning matches the OpenAPI response shape and performs no writes
+    ok 16 - duplicate warning matches the OpenAPI response shape and performs no writes
+      ---
+      duration_ms: 44.58424
+      ...
+    # Subtest: confirmed duplicate request returns HTTP 201
+    ok 17 - confirmed duplicate request returns HTTP 201
+      ---
+      duration_ms: 37.302419
+      ...
+    # Subtest: missing encryption key fails closed and performs no writes
+    ok 18 - missing encryption key fails closed and performs no writes
+      ---
+      duration_ms: 24.433833
+      ...
+    # Subtest: IdentifierConflictError returns HTTP 409 with ACCOUNT_IDENTIFIER_CONFLICT and zero writes
+    ok 19 - IdentifierConflictError returns HTTP 409 with ACCOUNT_IDENTIFIER_CONFLICT and zero writes
+      ---
+      duration_ms: 48.268757
+      ...
+    # Subtest: unexpected error in the create account route returns 500 INTERNAL_ERROR and hides details
+    ok 20 - unexpected error in the create account route returns 500 INTERNAL_ERROR and hides details
+      ---
+      duration_ms: 29.932943
+      ...
+    # Subtest: forced database failure rolls back Account, Capacities, and Backup Codes
+    ok 21 - forced database failure rolls back Account, Capacities, and Backup Codes
+      ---
+      duration_ms: 44.690558
+      ...
+# [10:26:25.656] [31mERROR[39m (9571): [36mEncryption configuration error during account creation[39m
+#     err: {
+#       "type": "EncryptionError",
+#       "message": "PLAYSYNCER_ACCOUNT_MASTER_KEY is not set",
+#       "stack":
+#           AccountDomainError: PLAYSYNCER_ACCOUNT_MASTER_KEY is not set
+#               at loadAccountMasterKey (/home/runner/workspace/artifacts/api-server/src/services/account/index.ts:160:11)
+#               at createAccount (/home/runner/workspace/artifacts/api-server/src/services/account/index.ts:493:16)
+#               at createAccountHandler (/home/runner/workspace/artifacts/api-server/src/routes/accounts.ts:213:26)
+#               at <anonymous> (/home/runner/workspace/artifacts/api-server/src/routes/accounts.create.test.ts:52:5)
+#               at Layer.handleRequest (/home/runner/workspace/node_modules/.pnpm/router@2.2.0/node_modules/router/lib/layer.js:152:17)
+#               at next (/home/runner/workspace/node_modules/.pnpm/router@2.2.0/node_modules/router/lib/route.js:157:13)
+#               at Route.dispatch (/home/runner/workspace/node_modules/.pnpm/router@2.2.0/node_modules/router/lib/route.js:117:3)
+#               at handle (/home/runner/workspace/node_modules/.pnpm/router@2.2.0/node_modules/router/index.js:435:11)
+#               at Layer.handleRequest (/home/runner/workspace/node_modules/.pnpm/router@2.2.0/node_modules/router/lib/layer.js:152:17)
+#               at /home/runner/workspace/node_modules/.pnpm/router@2.2.0/node_modules/router/index.js:295:15
+#       "name": "AccountDomainError"
+#     }
+# [10:26:25.744] [31mERROR[39m (Error/9571): [36mUnhandled error[39m
+#     [35mmessage[39m: "[REDACTED]"
+#     [35mstack[39m: "[REDACTED]"
+# [10:26:25.780] [31mERROR[39m (Error/9571): [36mUnhandled error[39m
+#     [35mmessage[39m: "[REDACTED]"
+#     [35mstack[39m: "[REDACTED]"
+    1..21
+ok 1 - Create Account handler
+  ---
+  duration_ms: 7011.43838
+  type: 'suite'
+  ...
+1..1
+# tests 21
+# suites 1
+# pass 21
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 7904.252271
+TAP version 13
+# Subtest: Delete Account handler
+    # Subtest: public DELETE /accounts/:id returns 403 and writes nothing
+    ok 1 - public DELETE /accounts/:id returns 403 and writes nothing
+      ---
+      duration_ms: 71.019826
+      ...
+    # Subtest: internal handler returns 409 with zero writes when no capacity_customers history exists
+    ok 2 - internal handler returns 409 with zero writes when no capacity_customers history exists
+      ---
+      duration_ms: 49.900428
+      ...
+    # Subtest: internal handler returns 409 with zero writes when active capacity_customers rows exist
+    ok 3 - internal handler returns 409 with zero writes when active capacity_customers rows exist
+      ---
+      duration_ms: 48.605888
+      ...
+    # Subtest: internal handler returns 409 with zero writes when removed capacity_customers rows exist
+    ok 4 - internal handler returns 409 with zero writes when removed capacity_customers rows exist
+      ---
+      duration_ms: 31.13756
+      ...
+    # Subtest: internal handler returns 409 with zero writes when cancelled capacity_customers rows exist
+    ok 5 - internal handler returns 409 with zero writes when cancelled capacity_customers rows exist
+      ---
+      duration_ms: 41.694924
+      ...
+    # Subtest: internal handler returns 409 with zero writes when soft-deleted capacity_customers rows exist
+    ok 6 - internal handler returns 409 with zero writes when soft-deleted capacity_customers rows exist
+      ---
+      duration_ms: 32.965135
+      ...
+    # Subtest: assignment on any capacity of the Account returns 409 with zero writes
+    ok 7 - assignment on any capacity of the Account returns 409 with zero writes
+      ---
+      duration_ms: 32.665539
+      ...
+    # Subtest: invalid UUID returns HTTP 400
+    ok 8 - invalid UUID returns HTTP 400
+      ---
+      duration_ms: 2.538799
+      ...
+    # Subtest: missing Account returns HTTP 404
+    ok 9 - missing Account returns HTTP 404
+      ---
+      duration_ms: 5.828001
+      ...
+    # Subtest: already soft-deleted Account returns HTTP 404
+    ok 10 - already soft-deleted Account returns HTTP 404
+      ---
+      duration_ms: 23.904284
+      ...
+    # Subtest: unexpected handler error returns 500 INTERNAL_ERROR and hides details
+    ok 11 - unexpected handler error returns 500 INTERNAL_ERROR and hides details
+      ---
+      duration_ms: 37.753982
+      ...
+    # Subtest: unrelated Games and Accounts remain unchanged after a delete attempt
+    ok 12 - unrelated Games and Accounts remain unchanged after a delete attempt
+      ---
+      duration_ms: 43.329271
+      ...
+    # Subtest: identifiers are not changed after a delete attempt
+    ok 13 - identifiers are not changed after a delete attempt
+      ---
+      duration_ms: 26.966293
+      ...
+# [10:26:33.259] [31mERROR[39m (Error/9698): [36mUnhandled error[39m
+#     [35mmessage[39m: "[REDACTED]"
+#     [35mstack[39m: "[REDACTED]"
+    1..13
+ok 1 - Delete Account handler
+  ---
+  duration_ms: 6466.986868
+  type: 'suite'
+  ...
+1..1
+# tests 13
+# suites 1
+# pass 13
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 7093.814798
+TAP version 13
+# Subtest: Account mutation routes are disabled
+    # Subtest: POST /games/:gameId/accounts returns 403 and writes nothing
+    ok 1 - POST /games/:gameId/accounts returns 403 and writes nothing
+      ---
+      duration_ms: 48.4521
+      ...
+    # Subtest: PATCH /accounts/:id returns 403 and writes nothing
+    ok 2 - PATCH /accounts/:id returns 403 and writes nothing
+      ---
+      duration_ms: 47.212452
+      ...
+    # Subtest: PATCH /accounts/:id/status-override returns 403 and writes nothing
+    ok 3 - PATCH /accounts/:id/status-override returns 403 and writes nothing
+      ---
+      duration_ms: 38.318022
+      ...
+    # Subtest: DELETE /accounts/:id returns 403 and writes nothing
+    ok 4 - DELETE /accounts/:id returns 403 and writes nothing
+      ---
+      duration_ms: 31.571964
+      ...
+    # Subtest: GET /games/:gameId/accounts returns only non-secret account fields
+    ok 5 - GET /games/:gameId/accounts returns only non-secret account fields
+      ---
+      duration_ms: 36.440785
+      ...
+    1..5
+ok 1 - Account mutation routes are disabled
+  ---
+  duration_ms: 4663.771194
+  type: 'suite'
+  ...
+1..1
+# tests 5
+# suites 1
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4972.323298
+TAP version 13
+# Subtest: Online ID case preservation and duplicate detection
+    # Subtest: stores Online ID with its entered casing after trimming
+    ok 1 - stores Online ID with its entered casing after trimming
+      ---
+      duration_ms: 110.838627
+      ...
+    # Subtest: detects duplicate Online IDs case-insensitively and performs no writes
+    ok 2 - detects duplicate Online IDs case-insensitively and performs no writes
+      ---
+      duration_ms: 48.602955
+      ...
+    # Subtest: allows a case-only edit to update the displayed casing
+    ok 3 - allows a case-only edit to update the displayed casing
+      ---
+      duration_ms: 55.293785
+      ...
+    # Subtest: does not treat the same Account as its own duplicate during case-only edit
+    ok 4 - does not treat the same Account as its own duplicate during case-only edit
+      ---
+      duration_ms: 116.919445
+      ...
+    # Subtest: detects a case-variant duplicate from another Account during update
+    ok 5 - detects a case-variant duplicate from another Account during update
+      ---
+      duration_ms: 46.720195
+      ...
+    1..5
+ok 1 - Online ID case preservation and duplicate detection
+  ---
+  duration_ms: 4956.883166
+  type: 'suite'
+  ...
+1..1
+# tests 5
+# suites 1
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 5821.388326
+TAP version 13
+# Subtest: Account mutation routes are disabled when flag is missing
+    # Subtest: POST /games/:gameId/accounts returns 403 and writes nothing
+    ok 1 - POST /games/:gameId/accounts returns 403 and writes nothing
+      ---
+      duration_ms: 24.410573
+      ...
+    # Subtest: PATCH /accounts/:id returns 403 and writes nothing
+    ok 2 - PATCH /accounts/:id returns 403 and writes nothing
+      ---
+      duration_ms: 10.516993
+      ...
+    1..2
+ok 1 - Account mutation routes are disabled when flag is missing
+  ---
+  duration_ms: 5632.304758
+  type: 'suite'
+  ...
+# Subtest: Account mutation routes are disabled when flag is false
+    # Subtest: POST /games/:gameId/accounts returns 403 and writes nothing
+    ok 1 - POST /games/:gameId/accounts returns 403 and writes nothing
+      ---
+      duration_ms: 20.904376
+      ...
+    # Subtest: PATCH /accounts/:id returns 403 and writes nothing
+    ok 2 - PATCH /accounts/:id returns 403 and writes nothing
+      ---
+      duration_ms: 6.091816
+      ...
+    1..2
+ok 2 - Account mutation routes are disabled when flag is false
+  ---
+  duration_ms: 5288.760145
+  type: 'suite'
+  ...
+# Subtest: Account mutation routes remain disabled in production even when flag is true
+    # Subtest: POST /games/:gameId/accounts returns 403 and writes nothing
+    ok 1 - POST /games/:gameId/accounts returns 403 and writes nothing
+      ---
+      duration_ms: 25.927843
+      ...
+    # Subtest: PATCH /accounts/:id returns 403 and writes nothing
+    ok 2 - PATCH /accounts/:id returns 403 and writes nothing
+      ---
+      duration_ms: 4.95926
+      ...
+    1..2
+ok 3 - Account mutation routes remain disabled in production even when flag is true
+  ---
+  duration_ms: 5196.419419
+  type: 'suite'
+  ...
+# Subtest: Account mutation routes are enabled in development with explicit true flag
+    # Subtest: POST /games/:gameId/accounts returns 201 and creates an Account
+    ok 1 - POST /games/:gameId/accounts returns 201 and creates an Account
+      ---
+      duration_ms: 85.153416
+      ...
+    # Subtest: Status Override remains disabled even with the flag
+    ok 2 - Status Override remains disabled even with the flag
+      ---
+      duration_ms: 6.477743
+      ...
+    # Subtest: Delete remains disabled even with the flag
+    ok 3 - Delete remains disabled even with the flag
+      ---
+      duration_ms: 5.19094
+      ...
+    1..3
+ok 4 - Account mutation routes are enabled in development with explicit true flag
+  ---
+  duration_ms: 5549.13783
+  type: 'suite'
+  ...
+1..4
+# tests 9
+# suites 4
+# pass 9
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 21979.276107
+TAP version 13
+# Subtest: Set Account Status Override handler
+    # Subtest: public PATCH /accounts/:id/status-override returns 403 and writes nothing
+    ok 1 - public PATCH /accounts/:id/status-override returns 403 and writes nothing
+      ---
+      duration_ms: 86.434511
+      ...
+    # Subtest: SOLD override succeeds and returns the recalculated status
+    ok 2 - SOLD override succeeds and returns the recalculated status
+      ---
+      duration_ms: 55.720371
+      ...
+    # Subtest: INACTIVE override succeeds and returns the recalculated status
+    ok 3 - INACTIVE override succeeds and returns the recalculated status
+      ---
+      duration_ms: 36.756978
+      ...
+    # Subtest: null clears the override and restores the derived status
+    ok 4 - null clears the override and restores the derived status
+      ---
+      duration_ms: 36.492736
+      ...
+    # Subtest: AVAILABLE and PARTIALLY_SOLD are rejected
+    ok 5 - AVAILABLE and PARTIALLY_SOLD are rejected
+      ---
+      duration_ms: 20.853377
+      ...
+    # Subtest: rejects unknown fields
+    ok 6 - rejects unknown fields
+      ---
+      duration_ms: 20.330745
+      ...
+    # Subtest: returns 404 for missing or deleted Account
+    ok 7 - returns 404 for missing or deleted Account
+      ---
+      duration_ms: 34.986546
+      ...
+    # Subtest: Capacities remain unchanged
+    ok 8 - Capacities remain unchanged
+      ---
+      duration_ms: 27.892869
+      ...
+    # Subtest: derived status is correct after clearing
+    ok 9 - derived status is correct after clearing
+      ---
+      duration_ms: 34.029681
+      ...
+    1..9
+ok 1 - Set Account Status Override handler
+  ---
+  duration_ms: 6488.195442
+  type: 'suite'
+  ...
+1..1
+# tests 9
+# suites 1
+# pass 9
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 7943.274861
+TAP version 13
+# Subtest: Read-only Account API
+    # Subtest: GET /games/:gameId/accounts returns an empty list for a game with no accounts
+    ok 1 - GET /games/:gameId/accounts returns an empty list for a game with no accounts
+      ---
+      duration_ms: 43.989255
+      ...
+    # Subtest: GET /games/:gameId/accounts returns multiple accounts in stable order
+    ok 2 - GET /games/:gameId/accounts returns multiple accounts in stable order
+      ---
+      duration_ms: 66.149758
+      ...
+    # Subtest: GET /games/:gameId/accounts excludes deleted accounts
+    ok 3 - GET /games/:gameId/accounts excludes deleted accounts
+      ---
+      duration_ms: 41.122767
+      ...
+    # Subtest: GET /games/:gameId/accounts returns GAME_NOT_FOUND for missing or deleted games
+    ok 4 - GET /games/:gameId/accounts returns GAME_NOT_FOUND for missing or deleted games
+      ---
+      duration_ms: 8.136018
+      ...
+    # Subtest: GET /accounts/:id returns safe Account detail with capacities
+    ok 5 - GET /accounts/:id returns safe Account detail with capacities
+      ---
+      duration_ms: 25.277072
+      ...
+    # Subtest: GET /accounts/:id returns ACCOUNT_NOT_FOUND for missing or deleted accounts
+    ok 6 - GET /accounts/:id returns ACCOUNT_NOT_FOUND for missing or deleted accounts
+      ---
+      duration_ms: 26.239284
+      ...
+    # Subtest: GET /accounts/:id/capacities returns safe capacities and derived status
+    ok 7 - GET /accounts/:id/capacities returns safe capacities and derived status
+      ---
+      duration_ms: 24.142683
+      ...
+    # Subtest: statusOverride INACTIVE returns INACTIVE
+    ok 8 - statusOverride INACTIVE returns INACTIVE
+      ---
+      duration_ms: 24.418693
+      ...
+    # Subtest: statusOverride SOLD returns SOLD
+    ok 9 - statusOverride SOLD returns SOLD
+      ---
+      duration_ms: 28.126578
+      ...
+    # Subtest: all capacities finished returns SOLD
+    ok 10 - all capacities finished returns SOLD
+      ---
+      duration_ms: 34.956927
+      ...
+    # Subtest: no finished capacity and no customer relation returns AVAILABLE
+    ok 11 - no finished capacity and no customer relation returns AVAILABLE
+      ---
+      duration_ms: 24.514118
+      ...
+    # Subtest: one active capacity_customers relation returns PARTIALLY_SOLD
+    ok 12 - one active capacity_customers relation returns PARTIALLY_SOLD
+      ---
+      duration_ms: 26.847041
+      ...
+    # Subtest: one finished capacity while others remain unfinished returns PARTIALLY_SOLD
+    ok 13 - one finished capacity while others remain unfinished returns PARTIALLY_SOLD
+      ---
+      duration_ms: 23.65433
+      ...
+    # Subtest: historical/deleted capacity_customers relations do not affect status
+    ok 14 - historical/deleted capacity_customers relations do not affect status
+      ---
+      duration_ms: 32.784479
+      ...
+    # Subtest: capacity_customers row counts remain unchanged after read-only requests
+    ok 15 - capacity_customers row counts remain unchanged after read-only requests
+      ---
+      duration_ms: 40.777595
+      ...
+    # Subtest: Account mutation routes remain disabled in production and do not write data
+    ok 16 - Account mutation routes remain disabled in production and do not write data
+      ---
+      duration_ms: 21.484376
+      ...
+    1..16
+ok 1 - Read-only Account API
+  ---
+  duration_ms: 6246.862717
+  type: 'suite'
+  ...
+1..1
+# tests 16
+# suites 1
+# pass 16
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6652.099064
+TAP version 13
+# Subtest: Update Account handler
+    # Subtest: public PATCH /accounts/:id returns 403 and writes nothing
+    ok 1 - public PATCH /accounts/:id returns 403 and writes nothing
+      ---
+      duration_ms: 140.475556
+      ...
+    # Subtest: updates non-sensitive fields and returns safe AccountDetailResponse
+    ok 2 - updates non-sensitive fields and returns safe AccountDetailResponse
+      ---
+      duration_ms: 44.686636
+      ...
+    # Subtest: updates sensitive fields and re-encrypts them
+    ok 3 - updates sensitive fields and re-encrypts them
+      ---
+      duration_ms: 33.565626
+      ...
+    # Subtest: omitted fields remain unchanged
+    ok 4 - omitted fields remain unchanged
+      ---
+      duration_ms: 46.346306
+      ...
+    # Subtest: rejects immutable and unknown fields
+    ok 5 - rejects immutable and unknown fields
+      ---
+      duration_ms: 57.871845
+      ...
+    # Subtest: rejects empty and confirmed-only bodies
+    ok 6 - rejects empty and confirmed-only bodies
+      ---
+      duration_ms: 25.862124
+      ...
+    # Subtest: rejects invalid UUID, email, and birthDate
+    ok 7 - rejects invalid UUID, email, and birthDate
+      ---
+      duration_ms: 27.107069
+      ...
+    # Subtest: returns 404 for missing or deleted Account
+    ok 8 - returns 404 for missing or deleted Account
+      ---
+      duration_ms: 29.233509
+      ...
+    # Subtest: returns duplicate warning against another Account with zero writes
+    ok 9 - returns duplicate warning against another Account with zero writes
+      ---
+      duration_ms: 41.176682
+      ...
+    # Subtest: does not warn when updating to the same Account's own values
+    ok 10 - does not warn when updating to the same Account's own values
+      ---
+      duration_ms: 26.904057
+      ...
+    # Subtest: confirmed duplicate succeeds and allows the update
+    ok 11 - confirmed duplicate succeeds and allows the update
+      ---
+      duration_ms: 38.087644
+      ...
+    # Subtest: fails closed and rolls back when encryption key is missing
+    ok 12 - fails closed and rolls back when encryption key is missing
+      ---
+      duration_ms: 37.058764
+      ...
+    # Subtest: fails closed and rolls back when encryption key is invalid
+    ok 13 - fails closed and rolls back when encryption key is invalid
+      ---
+      duration_ms: 42.270422
+      ...
+    # Subtest: fails closed and rolls back all writes when the database update fails
+    ok 14 - fails closed and rolls back all writes when the database update fails
+      ---
+      duration_ms: 53.434075
+      ...
+    # Subtest: keeps Backup Codes and Capacities unchanged
+    ok 15 - keeps Backup Codes and Capacities unchanged
+      ---
+      duration_ms: 31.891266
+      ...
+    # Subtest: keeps identifiers unchanged
+    ok 16 - keeps identifiers unchanged
+      ---
+      duration_ms: 29.475958
+      ...
+    # Subtest: response contains no secrets
+    ok 17 - response contains no secrets
+      ---
+      duration_ms: 33.478352
+      ...
+# [10:27:28.699] [31mERROR[39m (10716): [36mEncryption configuration error during account update[39m
+#     err: {
+#       "type": "EncryptionError",
+#       "message": "PLAYSYNCER_ACCOUNT_MASTER_KEY is not set",
+#       "stack":
+#           AccountDomainError: PLAYSYNCER_ACCOUNT_MASTER_KEY is not set
+#               at loadAccountMasterKey (/home/runner/workspace/artifacts/api-server/src/services/account/index.ts:160:11)
+#               at updateAccount (/home/runner/workspace/artifacts/api-server/src/services/account/index.ts:695:16)
+#               at updateAccountHandler (/home/runner/workspace/artifacts/api-server/src/routes/accounts.ts:268:26)
+#               at <anonymous> (/home/runner/workspace/artifacts/api-server/src/routes/accounts.update.test.ts:64:5)
+#               at Layer.handleRequest (/home/runner/workspace/node_modules/.pnpm/router@2.2.0/node_modules/router/lib/layer.js:152:17)
+#               at next (/home/runner/workspace/node_modules/.pnpm/router@2.2.0/node_modules/router/lib/route.js:157:13)
+#               at Route.dispatch (/home/runner/workspace/node_modules/.pnpm/router@2.2.0/node_modules/router/lib/route.js:117:3)
+#               at handle (/home/runner/workspace/node_modules/.pnpm/router@2.2.0/node_modules/router/index.js:435:11)
+#               at Layer.handleRequest (/home/runner/workspace/node_modules/.pnpm/router@2.2.0/node_modules/router/lib/layer.js:152:17)
+#               at /home/runner/workspace/node_modules/.pnpm/router@2.2.0/node_modules/router/index.js:295:15
+#       "name": "AccountDomainError"
+#     }
+# [10:27:28.749] [31mERROR[39m (10716): [36mEncryption configuration error during account update[39m
+#     err: {
+#       "type": "EncryptionError",
+#       "message": "PLAYSYNCER_ACCOUNT_MASTER_KEY must be 32 bytes after Base64 decoding, got 5",
+#       "stack":
+#           AccountDomainError: PLAYSYNCER_ACCOUNT_MASTER_KEY must be 32 bytes after Base64 decoding, got 5
+#               at loadAccountMasterKey (/home/runner/workspace/artifacts/api-server/src/services/account/index.ts:180:11)
+#               at updateAccount (/home/runner/workspace/artifacts/api-server/src/services/account/index.ts:695:16)
+#               at updateAccountHandler (/home/runner/workspace/artifacts/api-server/src/routes/accounts.ts:268:26)
+#               at <anonymous> (/home/runner/workspace/artifacts/api-server/src/routes/accounts.update.test.ts:64:5)
+#               at Layer.handleRequest (/home/runner/workspace/node_modules/.pnpm/router@2.2.0/node_modules/router/lib/layer.js:152:17)
+#               at next (/home/runner/workspace/node_modules/.pnpm/router@2.2.0/node_modules/router/lib/route.js:157:13)
+#               at Route.dispatch (/home/runner/workspace/node_modules/.pnpm/router@2.2.0/node_modules/router/lib/route.js:117:3)
+#               at handle (/home/runner/workspace/node_modules/.pnpm/router@2.2.0/node_modules/router/index.js:435:11)
+#               at Layer.handleRequest (/home/runner/workspace/node_modules/.pnpm/router@2.2.0/node_modules/router/lib/layer.js:152:17)
+#               at /home/runner/workspace/node_modules/.pnpm/router@2.2.0/node_modules/router/index.js:295:15
+#       "name": "AccountDomainError"
+#     }
+# [10:27:28.794] [31mERROR[39m (Error/10716): [36mUnhandled error[39m
+#     [35mmessage[39m: "[REDACTED]"
+#     [35mstack[39m: "[REDACTED]"
+    1..17
+ok 1 - Update Account handler
+  ---
+  duration_ms: 6318.056683
+  type: 'suite'
+  ...
+1..1
+# tests 17
+# suites 1
+# pass 17
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6875.51189
+TAP version 13
+# Subtest: Games API
+    # Subtest: creates a game successfully
+    ok 1 - creates a game successfully
+      ---
+      duration_ms: 52.037614
+      ...
+    # Subtest: created Game returns a valid UUID and is retrievable by GET /games/:id
+    ok 2 - created Game returns a valid UUID and is retrievable by GET /games/:id
+      ---
+      duration_ms: 26.991037
+      ...
+    # Subtest: created Game appears in GET /games
+    ok 3 - created Game appears in GET /games
+      ---
+      duration_ms: 26.777844
+      ...
+    # Subtest: normal POST /games validation/conflict failures never return 404
+    ok 4 - normal POST /games validation/conflict failures never return 404
+      ---
+      duration_ms: 18.784045
+      ...
+    # Subtest: rejects duplicate normalized titles
+    ok 5 - rejects duplicate normalized titles
+      ---
+      duration_ms: 25.103227
+      ...
+    # Subtest: rejects whitespace-only titles on create
+    ok 6 - rejects whitespace-only titles on create
+      ---
+      duration_ms: 4.059651
+      ...
+    # Subtest: rejects whitespace-only titles on update
+    ok 7 - rejects whitespace-only titles on update
+      ---
+      duration_ms: 17.270137
+      ...
+    # Subtest: collapses repeated internal spaces in the stored title
+    ok 8 - collapses repeated internal spaces in the stored title
+      ---
+      duration_ms: 10.079168
+      ...
+    # Subtest: rejects invalid UUID with 400
+    ok 9 - rejects invalid UUID with 400
+      ---
+      duration_ms: 2.277875
+      ...
+    # Subtest: returns 404 for missing game
+    ok 10 - returns 404 for missing game
+      ---
+      duration_ms: 6.229828
+      ...
+    # Subtest: allows platform change without account history
+    ok 11 - allows platform change without account history
+      ---
+      duration_ms: 17.149288
+      ...
+    # Subtest: blocks platform change with active account history
+    ok 12 - blocks platform change with active account history
+      ---
+      duration_ms: 54.716219
+      ...
+    # Subtest: allows same-platform update when an account exists
+    ok 13 - allows same-platform update when an account exists
+      ---
+      duration_ms: 28.434323
+      ...
+    # Subtest: blocks platform change with a soft-deleted account
+    ok 14 - blocks platform change with a soft-deleted account
+      ---
+      duration_ms: 49.137865
+      ...
+    # Subtest: changes status from ACTIVE to INACTIVE
+    ok 15 - changes status from ACTIVE to INACTIVE
+      ---
+      duration_ms: 18.250929
+      ...
+    # Subtest: allows hard delete without history
+    ok 16 - allows hard delete without history
+      ---
+      duration_ms: 19.463744
+      ...
+    # Subtest: blocks hard delete with active account history
+    ok 17 - blocks hard delete with active account history
+      ---
+      duration_ms: 25.96364
+      ...
+    # Subtest: blocks hard delete with a soft-deleted account
+    ok 18 - blocks hard delete with a soft-deleted account
+      ---
+      duration_ms: 44.696514
+      ...
+    # Subtest: enforces global normalized-title uniqueness across soft-deleted games
+    ok 19 - enforces global normalized-title uniqueness across soft-deleted games
+      ---
+      duration_ms: 31.178082
+      ...
+    # Subtest: lists all games including inactive ones
+    ok 20 - lists all games including inactive ones
+      ---
+      duration_ms: 26.467785
+      ...
+    1..20
+ok 1 - Games API
+  ---
+  duration_ms: 5762.144408
+  type: 'suite'
+  ...
+1..1
+# tests 20
+# suites 1
+# pass 20
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6028.520867
+TAP version 13
+# Subtest: Account Domain Service
+    # Subtest: creates a valid account
+    ok 1 - creates a valid account
+      ---
+      duration_ms: 58.997243
+      ...
+    # Subtest: trims and lowercases emails for storage
+    ok 2 - trims and lowercases emails for storage
+      ---
+      duration_ms: 21.17338
+      ...
+    # Subtest: trims Online ID but preserves its entered case
+    ok 3 - trims Online ID but preserves its entered case
+      ---
+      duration_ms: 18.591522
+      ...
+    # Subtest: rejects invalid birth date formats and impossible dates
+    ok 4 - rejects invalid birth date formats and impossible dates
+      ---
+      duration_ms: 17.505113
+      ...
+    # Subtest: rejects empty or whitespace-only backup codes
+    ok 5 - rejects empty or whitespace-only backup codes
+      ---
+      duration_ms: 8.162196
+      ...
+    # Subtest: rejects account creation for an inactive game
+    ok 6 - rejects account creation for an inactive game
+      ---
+      duration_ms: 4.937311
+      ...
+    # Subtest: rejects statusOverride through strict input contract
+    ok 7 - rejects statusOverride through strict input contract
+      ---
+      duration_ms: 4.701829
+      ...
+    # Subtest: fails closed when PLAYSYNCER_ACCOUNT_MASTER_KEY is missing or invalid
+    ok 8 - fails closed when PLAYSYNCER_ACCOUNT_MASTER_KEY is missing or invalid
+      ---
+      duration_ms: 4.234936
+      ...
+    # Subtest: encrypts credentials and decrypts them back to the original values
+    ok 9 - encrypts credentials and decrypts them back to the original values
+      ---
+      duration_ms: 15.763908
+      ...
+    # Subtest: two encryptions of the same value produce different ciphertext
+    ok 10 - two encryptions of the same value produce different ciphertext
+      ---
+      duration_ms: 0.547288
+      ...
+    # Subtest: returns a duplicate warning and writes nothing when duplicates exist
+    ok 11 - returns a duplicate warning and writes nothing when duplicates exist
+      ---
+      duration_ms: 26.782996
+      ...
+    # Subtest: detects duplicates case-insensitively for emails and Online ID
+    ok 12 - detects duplicates case-insensitively for emails and Online ID
+      ---
+      duration_ms: 24.149418
+      ...
+    # Subtest: creates an account when confirmed despite duplicates
+    ok 13 - creates an account when confirmed despite duplicates
+      ---
+      duration_ms: 21.521213
+      ...
+    # Subtest: returns only safe, non-secret fields in the result
+    ok 14 - returns only safe, non-secret fields in the result
+      ---
+      duration_ms: 18.778019
+      ...
+    # Subtest: rolls back all writes when Account creation fails
+    ok 15 - rolls back all writes when Account creation fails
+      ---
+      duration_ms: 5.058688
+      ...
+    # Subtest: rolls back all writes when Backup Code insert fails due to database trigger
+    ok 16 - rolls back all writes when Backup Code insert fails due to database trigger
+      ---
+      duration_ms: 37.88556
+      ...
+    # Subtest: creates correct capacity rows with exact kind and instanceNo tuples for all platforms
+    ok 17 - creates correct capacity rows with exact kind and instanceNo tuples for all platforms
+      ---
+      duration_ms: 40.113208
+      ...
+    # Subtest: allocates distinct identifiers for two concurrent creations
+    ok 18 - allocates distinct identifiers for two concurrent creations
+      ---
+      duration_ms: 32.228827
+      ...
+    # Subtest: concurrent identical unconfirmed requests produce one creation and one warning
+    ok 19 - concurrent identical unconfirmed requests produce one creation and one warning
+      ---
+      duration_ms: 26.080181
+      ...
+    # Subtest: identifiers from a created and deleted account are not reused
+    ok 20 - identifiers from a created and deleted account are not reused
+      ---
+      duration_ms: 24.87055
+      ...
+    # Subtest: invalid birth dates do not throw RangeError
+    ok 21 - invalid birth dates do not throw RangeError
+      ---
+      duration_ms: 4.317897
+      ...
+    # Subtest: returns IdentifierConflictError when forced per-game sequence collision occurs
+    ok 22 - returns IdentifierConflictError when forced per-game sequence collision occurs
+      ---
+      duration_ms: 31.740368
+      ...
+    # Subtest: duplicate advisory lock tokens do not cause incorrect behavior
+    ok 23 - duplicate advisory lock tokens do not cause incorrect behavior
+      ---
+      duration_ms: 15.894757
+      ...
+    1..23
+ok 1 - Account Domain Service
+  ---
+  duration_ms: 2695.63398
+  type: 'suite'
+  ...
+1..1
+# tests 23
+# suites 1
+# pass 23
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3854.792204
+EXIT_CODE=0

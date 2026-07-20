@@ -15,6 +15,7 @@ import { render } from "@/test/render";
 import { gameFixture, accountListItemFixture, accountDetailFixture, accountCapacityFixture } from "@/test/fixtures";
 import { AccountStatus } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { accountMutationsEnabled, PERSIAN_INACTIVE_GAME_CREATE_DISABLED } from "@/features/account-write/accountMutationsEnabled";
 
 vi.mock("@workspace/api-client-react", async () => {
   const actual = await vi.importActual<typeof import("@workspace/api-client-react")>(
@@ -45,6 +46,11 @@ vi.mock("@tanstack/react-query", async () => {
     useQueryClient: vi.fn(),
   };
 });
+
+vi.mock("@/features/account-write/accountMutationsEnabled", () => ({
+  accountMutationsEnabled: vi.fn().mockReturnValue(true),
+  PERSIAN_INACTIVE_GAME_CREATE_DISABLED: "بازی غیرفعال است. برای افزودن اکانت، ابتدا بازی را فعال کنید.",
+}));
 
 function createApiError(message: string, status: number): Error & { status: number; data: unknown } {
   const err = new Error(message) as Error & { status: number; data: unknown };
@@ -310,6 +316,47 @@ describe("GameDetailPage Account workspace", () => {
       // The detail modal should be replaced by the edit dialog; the same dialog role remains.
       expect(screen.getByRole("dialog")).toBeInTheDocument();
       expect(screen.queryByText("جزئیات اکانت")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("Account mutation runtime gate", () => {
+    it("hides Add and Edit controls when account mutations are disabled", () => {
+      vi.mocked(accountMutationsEnabled).mockReturnValue(false);
+      mockGamesContext();
+      const accounts = [accountListItemFixture({ id: "acc-1", displayNumber: "TEST-001" })];
+      vi.mocked(useListAccounts).mockReturnValue(mockListAccounts(accounts, "success"));
+      renderGameDetail("/games/game-1");
+      expect(screen.queryByRole("button", { name: /افزودن اکانت/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /ویرایش اکانت/i })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("Inactive Game behavior", () => {
+    it("disables Add Account and shows a safe Persian explanation", () => {
+      mockGamesContext({ games: [{ ...gameFixture, coverUrl: "https://example.com/cover.jpg", status: "INACTIVE" }] });
+      vi.mocked(useListAccounts).mockReturnValue(mockListAccounts([], "success"));
+      renderGameDetail("/games/game-1");
+      const addButton = screen.getByRole("button", { name: /افزودن اکانت/i });
+      expect(addButton).toBeDisabled();
+      expect(screen.getByText(PERSIAN_INACTIVE_GAME_CREATE_DISABLED)).toBeInTheDocument();
+    });
+  });
+
+  describe("Cross-Game state safety", () => {
+    it("closes Create and Edit dialogs and clears selected account IDs when gameId changes", async () => {
+      mockGamesContext();
+      const accounts = [accountListItemFixture({ id: "acc-1", displayNumber: "TEST-001" })];
+      vi.mocked(useListAccounts).mockReturnValue(mockListAccounts(accounts, "success"));
+      render(<NavigableGameDetailPage />, { initialRoute: "/games/game-1" });
+
+      // Open create dialog and select an account for edit.
+      fireEvent.click(screen.getByRole("button", { name: /افزودن اکانت/i }));
+      fireEvent.click(screen.getByRole("button", { name: /ویرایش اکانت/i }));
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+      // Navigate to a different Game.
+      fireEvent.click(screen.getByTestId("navigate"));
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     });
   });
 });

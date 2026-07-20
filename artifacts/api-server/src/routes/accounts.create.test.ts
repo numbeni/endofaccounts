@@ -8,7 +8,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
 import { errorHandler } from "../middlewares/error-handler.ts";
-import { createAccountHandler } from "./accounts.ts";
 import { p } from "../lib/req-param.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -18,6 +17,8 @@ const TEST_MASTER_KEY = Buffer.from(
   "0123456789abcdef0123456789abcdef",
   "utf8",
 ).toString("base64");
+
+let createAccountHandler: typeof import("./accounts.ts")["createAccountHandler"];
 
 let idCounter = 0;
 function nextId(): string {
@@ -92,6 +93,12 @@ describe("Create Account handler", () => {
     stopPublicServer = stopServerFn;
 
     db = await import("@workspace/db");
+
+    // Load modules that depend on @workspace/db only after the disposable test
+    // database URL is set, so the production DB connection architecture is not
+    // modified to accommodate tests.
+    const accountsModule = await import("./accounts.ts");
+    createAccountHandler = accountsModule.createAccountHandler;
 
     testApp = buildTestApp();
     testPort = await getFreePort();

@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
 import { logger } from "../lib/logger.ts";
+import { redactForLog } from "../lib/sensitive-redaction.ts";
 
 /**
  * Thrown by route/middleware code to produce a specific HTTP status with a
@@ -58,7 +59,7 @@ export function errorHandler(
 ): void {
   if (res.headersSent) {
     // A response already started streaming; nothing safe to do but log.
-    logger.error(err, "Error occurred after response headers were sent");
+    logger.error(redactForLog(err), "Error occurred after response headers were sent");
     return;
   }
 
@@ -103,6 +104,6 @@ export function errorHandler(
     return;
   }
 
-  logger.error(err, "Unhandled error");
+  logger.error(redactForLog(err), "Unhandled error");
   res.status(500).json({ error: "Internal server error", code: "INTERNAL_ERROR" });
 }

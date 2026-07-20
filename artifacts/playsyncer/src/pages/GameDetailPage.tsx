@@ -20,6 +20,10 @@ import {
   CreateAccountDialog,
   EditAccountDialog,
 } from "@/features/account-write";
+import {
+  accountMutationsEnabled,
+  PERSIAN_INACTIVE_GAME_CREATE_DISABLED,
+} from "@/features/account-write/accountMutationsEnabled";
 import NotFoundPage from "./NotFoundPage";
 
 const FALLBACK_COVER =
@@ -36,10 +40,26 @@ export default function GameDetailPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editAccountId, setEditAccountId] = useState<string | null>(null);
+  const accountOpsEnabled = accountMutationsEnabled();
 
+  // Cross-Game state safety: when gameId changes or the page unmounts,
+  // close dialogs, clear selected account IDs, clear pending duplicate state,
+  // clear secrets, and prevent an old form from submitting to the new Game.
   useEffect(() => {
     setDetailAccountId(null);
+    setCreateOpen(false);
+    setEditOpen(false);
+    setEditAccountId(null);
   }, [gameId]);
+
+  useEffect(() => {
+    return () => {
+      setDetailAccountId(null);
+      setCreateOpen(false);
+      setEditOpen(false);
+      setEditAccountId(null);
+    };
+  }, []);
 
   const {
     data: accountsData,
@@ -76,7 +96,11 @@ export default function GameDetailPage() {
         <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-6 text-center">
           <AlertCircle className="mx-auto h-8 w-8 text-destructive" />
           <p className="mt-3 text-sm font-medium text-destructive">دریافت اطلاعات بازی با خطا مواجه شد</p>
-          {error && <p className="mt-1 text-xs text-muted-foreground">{error.message}</p>}
+          {error && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {formatApiError(error, { resource: "game" })}
+            </p>
+          )}
           <button
             onClick={refetch}
             className="mt-4 inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium text-foreground hover:bg-accent transition-colors"
@@ -227,14 +251,23 @@ export default function GameDetailPage() {
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">اکانت‌ها</h2>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setCreateOpen(true)}
-              className="inline-flex items-center gap-2 rounded-xl gradient-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-soft transition-all hover:shadow-glow"
-            >
-              <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">افزودن اکانت</span>
-            </button>
+            {accountOpsEnabled && (
+              <button
+                type="button"
+                onClick={() => isActive && setCreateOpen(true)}
+                disabled={!isActive}
+                title={isActive ? undefined : PERSIAN_INACTIVE_GAME_CREATE_DISABLED}
+                className="inline-flex items-center gap-2 rounded-xl gradient-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-soft transition-all hover:shadow-glow disabled:opacity-50"
+              >
+                <Plus className="h-4 w-4" />
+                <span className="hidden sm:inline">افزودن اکانت</span>
+              </button>
+            )}
+            {!isActive && accountOpsEnabled && (
+              <span className="text-xs text-warning">
+                {PERSIAN_INACTIVE_GAME_CREATE_DISABLED}
+              </span>
+            )}
             <button
               type="button"
               onClick={() => refetchAccounts()}
@@ -300,7 +333,7 @@ export default function GameDetailPage() {
                 gameTitle={game.title}
                 platform={game.platform}
                 onViewDetails={setDetailAccountId}
-                onEdit={handleEditRequest}
+                onEdit={accountOpsEnabled ? handleEditRequest : undefined}
               />
             ))}
           </div>
@@ -312,7 +345,11 @@ export default function GameDetailPage() {
         accountId={detailAccountId}
         gamePlatform={game.platform}
         onClose={() => setDetailAccountId(null)}
-        onEdit={detailAccountId ? () => handleEditRequest(detailAccountId) : undefined}
+        onEdit={
+          detailAccountId && accountOpsEnabled
+            ? () => handleEditRequest(detailAccountId)
+            : undefined
+        }
       />
 
       <CreateAccountDialog

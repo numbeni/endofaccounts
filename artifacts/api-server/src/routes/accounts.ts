@@ -52,17 +52,23 @@ const ACCOUNT_OPS_DISABLED = "Account operations are not authorized";
 const ACCOUNT_DELETE_DISABLED = "Account operations are currently disabled";
 
 /**
- * Account mutations are enabled in development and staging so operators can
- * run integration verification, but are hard-disabled in production. The gate
- * is checked at router startup; changing the environment requires a restart.
+ * PS-03D5-7 — Fail-closed runtime gate for Account mutations.
+ *
+ * Create and Update are enabled only when ALL of the following are true:
+ * - `PLAYSYNCER_ACCOUNT_MUTATIONS_ENABLED === "true"`
+ * - `NODE_ENV !== "production"`
+ * - `REPLIT_ENVIRONMENT !== "production"`
+ *
+ * Missing, unknown, empty, or invalid values keep mutations disabled.
+ * Production remains disabled even if the enable flag is accidentally set.
  */
 function accountOpsEnabled(): boolean {
-  // Treat unknown/missing values as development/staging (enabled) so the local
-  // workspace and disposable test databases can run integration tests. Only
-  // an explicit production marker disables the routes.
-  const nodeEnv = process.env.NODE_ENV;
-  const replitEnv = process.env.REPLIT_ENVIRONMENT;
-  return nodeEnv !== "production" && replitEnv !== "production";
+  const mutationsEnabled =
+    process.env.PLAYSYNCER_ACCOUNT_MUTATIONS_ENABLED === "true";
+  const isProduction =
+    process.env.NODE_ENV === "production" ||
+    process.env.REPLIT_ENVIRONMENT === "production";
+  return mutationsEnabled && !isProduction;
 }
 
 const PERSIAN = {
@@ -472,9 +478,6 @@ if (accountOpsEnabled()) {
 
   /** PATCH /accounts/:id — enabled in development/staging only. */
   router.patch("/accounts/:id", updateAccountHandler);
-
-  /** PATCH /accounts/:id/status-override — enabled in development/staging only. */
-  router.patch("/accounts/:id/status-override", setAccountStatusOverrideHandler);
 } else {
   /** POST /games/:gameId/accounts — disabled in production. */
   router.post("/games/:gameId/accounts", async (_req: Request, res: Response) => {
@@ -485,12 +488,12 @@ if (accountOpsEnabled()) {
   router.patch("/accounts/:id", async (_req: Request, res: Response) => {
     res.status(403).json({ error: ACCOUNT_OPS_DISABLED, code: "ACCOUNT_OPS_DISABLED" });
   });
-
-  /** PATCH /accounts/:id/status-override — disabled in production. */
-  router.patch("/accounts/:id/status-override", async (_req: Request, res: Response) => {
-    res.status(403).json({ error: ACCOUNT_OPS_DISABLED, code: "ACCOUNT_OPS_DISABLED" });
-  });
 }
+
+/** PATCH /accounts/:id/status-override — always disabled; status override is not authorized. */
+router.patch("/accounts/:id/status-override", async (_req: Request, res: Response) => {
+  res.status(403).json({ error: ACCOUNT_OPS_DISABLED, code: "ACCOUNT_OPS_DISABLED" });
+});
 
 /** DELETE /accounts/:id — always disabled; account deletion is not authorized. */
 router.delete("/accounts/:id", async (_req: Request, res: Response) => {
