@@ -1,6 +1,7 @@
 import { Link, useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { ChevronLeft, Gamepad2, Loader2, AlertCircle, RefreshCw, Users, Pencil, Power } from "lucide-react";
+import { ChevronLeft, Gamepad2, Loader2, AlertCircle, RefreshCw, Users, Pencil, Power, Plus } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { SmartSearch } from "@/components/SmartSearch";
 import { GameFormModal } from "@/components/GameFormModal";
@@ -10,10 +11,15 @@ import { useGames } from "@/hooks/useGames";
 import {
   useListAccounts,
   getListAccountsQueryKey,
+  getGetAccountQueryKey,
 } from "@workspace/api-client-react";
 import { AccountCardReadOnly } from "@/components/AccountCardReadOnly";
 import { AccountDetailsReadOnly } from "@/components/AccountDetailsReadOnly";
 import { formatApiError } from "@/lib/apiErrors";
+import {
+  CreateAccountDialog,
+  EditAccountDialog,
+} from "@/features/account-write";
 import NotFoundPage from "./NotFoundPage";
 
 const FALLBACK_COVER =
@@ -23,9 +29,13 @@ export default function GameDetailPage() {
   const { gameId } = useParams();
   const { games, isLoading, isError, error, refetch, mutations } = useGames();
   const game = games.find((g) => g.id === gameId);
+  const queryClient = useQueryClient();
   const [formOpen, setFormOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [detailAccountId, setDetailAccountId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editAccountId, setEditAccountId] = useState<string | null>(null);
 
   useEffect(() => {
     setDetailAccountId(null);
@@ -98,6 +108,41 @@ export default function GameDetailPage() {
     await mutations.toggleGameStatus(game.id);
     setConfirmOpen(false);
   };
+
+  const handleCreateSuccess = () => {
+    setCreateOpen(false);
+    if (gameId) {
+      queryClient.invalidateQueries({ queryKey: getListAccountsQueryKey(gameId) });
+    }
+  };
+
+  const handleEditRequest = (accountId: string) => {
+    setEditAccountId(accountId);
+    setEditOpen(true);
+    setDetailAccountId(null);
+  };
+
+  const handleEditSuccess = () => {
+    const accountId = editAccountId;
+    setEditOpen(false);
+    setEditAccountId(null);
+    setDetailAccountId(null);
+    if (gameId) {
+      queryClient.invalidateQueries({ queryKey: getListAccountsQueryKey(gameId) });
+    }
+    if (accountId) {
+      queryClient.invalidateQueries({ queryKey: getGetAccountQueryKey(accountId) });
+    }
+  };
+
+  const handleEditClose = () => {
+    setEditOpen(false);
+    setEditAccountId(null);
+  };
+
+  const editAccount = editAccountId
+    ? accounts.find((a) => a.id === editAccountId) ?? null
+    : null;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10">
@@ -181,17 +226,27 @@ export default function GameDetailPage() {
       <section className="mt-8">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">اکانت‌ها</h2>
-          <button
-            type="button"
-            onClick={() => refetchAccounts()}
-            disabled={accountsLoading}
-            className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-50"
-          >
-            <RefreshCw
-              className={cn("h-4 w-4", accountsLoading && "animate-spin")}
-            />
-            <span className="hidden sm:inline">بروزرسانی</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCreateOpen(true)}
+              className="inline-flex items-center gap-2 rounded-xl gradient-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-soft transition-all hover:shadow-glow"
+            >
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">افزودن اکانت</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => refetchAccounts()}
+              disabled={accountsLoading}
+              className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+            >
+              <RefreshCw
+                className={cn("h-4 w-4", accountsLoading && "animate-spin")}
+              />
+              <span className="hidden sm:inline">بروزرسانی</span>
+            </button>
+          </div>
         </div>
 
         {accountsLoading && (
@@ -245,6 +300,7 @@ export default function GameDetailPage() {
                 gameTitle={game.title}
                 platform={game.platform}
                 onViewDetails={setDetailAccountId}
+                onEdit={handleEditRequest}
               />
             ))}
           </div>
@@ -256,6 +312,21 @@ export default function GameDetailPage() {
         accountId={detailAccountId}
         gamePlatform={game.platform}
         onClose={() => setDetailAccountId(null)}
+        onEdit={detailAccountId ? () => handleEditRequest(detailAccountId) : undefined}
+      />
+
+      <CreateAccountDialog
+        open={createOpen}
+        gameId={gameId ?? ""}
+        onSuccess={handleCreateSuccess}
+        onClose={() => setCreateOpen(false)}
+      />
+
+      <EditAccountDialog
+        open={editOpen}
+        account={editAccount}
+        onSuccess={handleEditSuccess}
+        onClose={handleEditClose}
       />
 
       <GameFormModal

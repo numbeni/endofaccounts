@@ -63,15 +63,17 @@ export async function startTestPg(options?: {
 export async function startApiServer(
   databaseUrl: string,
   serverDir: string,
+  envOverrides?: Record<string, string>,
 ): Promise<TestServer> {
   const port = await getFreePort();
   const baseUrl = `http://localhost:${port}/api`;
   const env = {
     ...process.env,
+    ...envOverrides,
     DATABASE_URL: databaseUrl,
     PORT: String(port),
     BASE_PATH: "/api-server",
-    NODE_ENV: "test",
+    NODE_ENV: envOverrides?.NODE_ENV ?? "test",
   };
 
   const child = spawn("node", [path.join(serverDir, "index.mjs")], {

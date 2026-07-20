@@ -249,19 +249,19 @@ describe("Account OpenAPI contract", () => {
     );
   });
 
-  it("does not allow the active frontend to import Account mutation hooks", () => {
+  it("does not allow the active frontend to import Delete or Status Override Account mutation hooks", () => {
     const frontendSrc = path.resolve(root, "artifacts", "playsyncer", "src");
-    // The account-write feature is intentionally isolated and not mounted in
-    // production; its components and tests may import the mutation hooks. Only
-    // the active frontend (everything outside features/account-write) must not.
+    // Create and Edit are now mounted in GameDetailPage for development/staging
+    // integration. Status Override and Delete remain isolated and must not be
+    // imported by the active frontend.
     const output = execSync(
-      `find ${frontendSrc} -type f \\( -name '*.ts' -o -name '*.tsx' \\) | grep -v '/features/account-write/' | xargs grep -l "useUpdateAccount\\|useSetAccountStatusOverride\\|useDeleteAccount" 2>/dev/null || true`,
+      `find ${frontendSrc} -type f \\( -name '*.ts' -o -name '*.tsx' \\) | grep -v '/features/account-write/' | xargs grep -l "useSetAccountStatusOverride\\|useDeleteAccount" 2>/dev/null || true`,
       { encoding: "utf-8" },
     );
     assert.strictEqual(
       output.trim(),
       "",
-      "active frontend imports or references Account mutation hooks/functions",
+      "active frontend imports or references Delete or Status Override Account mutation hooks",
     );
   });
 });

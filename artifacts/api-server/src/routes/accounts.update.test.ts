@@ -110,6 +110,7 @@ describe("Update Account handler", { concurrency: 1 }, () => {
     const { baseUrl: serverUrl, stop: stopServerFn } = await startApiServer(
       databaseUrl,
       DIST_DIR,
+      { NODE_ENV: "production" },
     );
     publicBaseUrl = serverUrl;
     stopPublicServer = stopServerFn;

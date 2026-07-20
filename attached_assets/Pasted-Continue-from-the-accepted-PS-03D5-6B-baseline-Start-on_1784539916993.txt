@@ -1,0 +1,144 @@
+Continue from the accepted PS-03D5-6B baseline.
+
+Start only:
+
+PS-03D5-7 — Account Create/Edit Runtime Integration and Verification
+
+Before changing anything, inspect the existing frontend, API routes, services, generated client, database contract, tests, and runtime mutation gate.
+
+Separate Facts, Assumptions, Risks, and Recommendations. Do not make unsupported claims.
+
+## Goal
+
+Make these two operator-facing features actually usable:
+
+1. Add Account
+2. Edit Account
+
+The Account Write dialogs already exist. Do not rebuild or redesign them.
+
+## Required implementation
+
+- Mount the existing Create Account flow in the correct Game page.
+- Add a clear “Add Account” action.
+- Mount the existing Edit Account flow from the relevant Account card/details view.
+- Add a clear Edit action.
+- Connect both flows to the existing generated API client and mutation hooks.
+- Enable only the existing Create, Update, and Status Override Account operations required by these flows.
+- Preserve all existing validation, duplicate-warning, password-preservation, and sensitive-state clearing behavior.
+- Refresh or invalidate the correct Account queries after successful mutation so the UI immediately shows the saved result.
+
+Do not create fake frontend-only data.
+
+## Runtime safety
+
+Hard Delete must remain unavailable.
+
+Do not enable or implement:
+
+- Account Delete
+- Auth
+- RBAC
+- Admin Levels
+- Audit Log
+- Secret Reveal
+- Orders
+- Assignment
+- Capacity mutations
+
+Auth and Audit are planned for later phases and are not blockers for this internal development-stage integration.
+
+However, do not silently expose unauthenticated mutations to a production environment. If the current code cannot distinguish internal development/staging from production safely, stop and report the exact runtime activation blocker.
+
+Do not change schema, migrations, OpenAPI, generated files, dependencies, or lockfile unless a direct contract conflict is proven. Report such conflicts instead of bypassing them.
+
+Do not run db:migrate.
+
+## Acceptance proof
+
+Using real API and database behavior, prove:
+
+- a new Account can be created for a Game
+- the created Account is persisted in PostgreSQL
+- the created Account appears in the Game page after success
+- an existing Account can be edited
+- edited values persist after reload
+- Duplicate Warning works without retry loops
+- invalid values are rejected safely
+- Passwords are preserved exactly
+- no Password or Backup Code is logged or displayed in errors
+- Delete still returns the approved unavailable behavior
+- Games list and Game details still load without HTTP 500
+
+Add focused regression tests for Create and Edit runtime integration.
+
+## Validation
+
+Create:
+
+- reports/ps03d5-7-execution-log.md
+- reports/ps03d5-7-validation-full.txt
+- reports/ps03d5-7-runtime-verification.md
+- reports/ps03d5-7.diff
+- reports/ps03d5-7-manifest.txt
+
+Run and capture complete output, exit codes, warnings, failures, and test counts for:
+
+- pnpm install --frozen-lockfile
+- pnpm run typecheck
+- pnpm --filter @workspace/api-server run test
+- pnpm --filter @workspace/db run test
+- pnpm --filter @workspace/playsyncer run test
+- PORT=24351 BASE_PATH=/ pnpm --filter @workspace/playsyncer run build
+- git diff --check
+
+Do not hide failed attempts or invent runtime evidence.
+
+## Documentation and package
+
+Update docs/CURRENT_PHASE.md to:
+
+Current sub-stage:
+PS-03D5-7 — Account Create/Edit Runtime Integration and Verification
+
+Status:
+IMPLEMENTATION COMPLETE, AWAITING SOURCE REVIEW
+
+PS-03D5:
+NOT CLOSED
+
+Create the complete source package:
+
+playsyncer-ps03d5-7-account-create-edit-review.zip
+
+Exclude .git, node_modules, builds, coverage, caches, .env files, secrets, prompt files, attached_assets/Pasted-*, and nested ZIP files.
+
+Verify file type, unzip integrity, exact size, SHA-256, entry count, and required root directories.
+
+## Final response
+
+Use exactly one status:
+
+- PS-03D5-7 — IMPLEMENTATION COMPLETE, AWAITING SOURCE REVIEW
+- PS-03D5-7 — RUNTIME ACTIVATION BLOCKER
+- PS-03D5-7 — CONTRACT CONFLICT
+- PS-03D5-7 — TEST OR BUILD FAILURE
+- PS-03D5-7 — GAMES REGRESSION
+- PS-03D5-7 — SCOPE VIOLATION
+- PS-03D5-7 — PACKAGING FAILURE
+
+Report:
+
+- exact files changed
+- how Create was mounted and activated
+- how Edit was mounted and activated
+- mutation-gate changes
+- real database persistence evidence
+- Create/Edit test results
+- Games regression result
+- remaining risks
+- ZIP filename, size, SHA-256, entry count, and unzip result
+- git status --short
+
+Do not commit.
+Do not close PS-03D5 automatically.

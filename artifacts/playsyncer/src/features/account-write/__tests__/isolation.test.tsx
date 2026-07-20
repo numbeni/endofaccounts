@@ -35,28 +35,29 @@ vi.mock("@workspace/api-client-react", async () => {
   };
 });
 
-describe("AccountCardReadOnly isolation", () => {
+describe("AccountCardReadOnly integration boundaries", () => {
   const account = accountListItemFixture();
 
   beforeEach(() => {
     vi.mocked(useGetAccountCapacities).mockReturnValue(mockCapacities([]));
   });
 
-  it("does not render any Account Write controls", () => {
+  it("renders Edit but not Create, Status Override, or Delete controls", () => {
     render(
       <AccountCardReadOnly
         account={account}
         gameTitle="Test Game"
         platform="PS4_AND_PS5"
+        onEdit={vi.fn()}
       />,
     );
-    expect(screen.queryByText("افزودن اکانت جدید")).not.toBeInTheDocument();
-    expect(screen.queryByText("ویرایش اکانت")).not.toBeInTheDocument();
-    expect(screen.queryByText("تغییر وضعیت اکانت")).not.toBeInTheDocument();
-    expect(screen.queryByText("حذف در دسترس نیست")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /ویرایش/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /افزودن/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /تغییر وضعیت/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /حذف/i })).not.toBeInTheDocument();
   });
 
-  it("does not have Create, Edit, Status Override, or Delete buttons", () => {
+  it("does not render Edit when onEdit is not provided", () => {
     render(
       <AccountCardReadOnly
         account={account}
@@ -64,13 +65,11 @@ describe("AccountCardReadOnly isolation", () => {
         platform="PS4_AND_PS5"
       />,
     );
-    expect(screen.queryByRole("button", { name: /افزودن/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /ویرایش/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /حذف/i })).not.toBeInTheDocument();
   });
 });
 
-describe("AccountDetailsReadOnly isolation", () => {
+describe("AccountDetailsReadOnly integration boundaries", () => {
   const account = accountDetailFixture();
 
   beforeEach(() => {
@@ -78,22 +77,23 @@ describe("AccountDetailsReadOnly isolation", () => {
     vi.mocked(useGetAccountCapacities).mockReturnValue(mockCapacities([]));
   });
 
-  it("does not render Account Write controls", () => {
+  it("renders Edit but not Create, Status Override, or Delete controls", () => {
     render(
       <AccountDetailsReadOnly
         open
         accountId="acc-1"
         gamePlatform="PS4_AND_PS5"
         onClose={vi.fn()}
+        onEdit={vi.fn()}
       />,
     );
-    expect(screen.queryByText("افزودن اکانت جدید")).not.toBeInTheDocument();
-    expect(screen.queryByText("ویرایش اکانت")).not.toBeInTheDocument();
-    expect(screen.queryByText("تغییر وضعیت اکانت")).not.toBeInTheDocument();
-    expect(screen.queryByText("حذف در دسترس نیست")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /ویرایش/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /افزودن/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /تغییر وضعیت/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /حذف/i })).not.toBeInTheDocument();
   });
 
-  it("does not render Edit or Delete action buttons", () => {
+  it("does not render Edit when onEdit is not provided", () => {
     render(
       <AccountDetailsReadOnly
         open
@@ -103,7 +103,6 @@ describe("AccountDetailsReadOnly isolation", () => {
       />,
     );
     expect(screen.queryByRole("button", { name: /ویرایش/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /حذف/i })).not.toBeInTheDocument();
   });
 });
 

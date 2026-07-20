@@ -205,6 +205,7 @@ describe("Read-only Account API", () => {
     const { baseUrl: serverUrl, stop: stopServerFn } = await startApiServer(
       databaseUrl,
       DIST_DIR,
+      { NODE_ENV: "production" },
     );
     baseUrl = serverUrl;
     stopServer = stopServerFn;
@@ -524,7 +525,7 @@ describe("Read-only Account API", () => {
     assert.strictEqual(after, before);
   });
 
-  it("Account mutation routes remain disabled and do not write data", async () => {
+  it("Account mutation routes remain disabled in production and do not write data", async () => {
     const game = await createGame("Disabled Mutation Game", "PS5_ONLY");
     const [before] = await db.db
       .select({ count: sql`count(*)::int` })

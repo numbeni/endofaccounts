@@ -2,12 +2,19 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { Routes, Route, useNavigate } from "react-router-dom";
 import GameDetailPage from "./GameDetailPage";
-import { useListAccounts, useGetAccount, useGetAccountCapacities } from "@workspace/api-client-react";
+import {
+  useListAccounts,
+  useGetAccount,
+  useGetAccountCapacities,
+  useCreateAccount,
+  useUpdateAccount,
+} from "@workspace/api-client-react";
 import { useGames } from "@/hooks/useGames";
 import { mockListAccounts, mockAccountDetail, mockCapacities } from "@/test/mocks";
 import { render } from "@/test/render";
 import { gameFixture, accountListItemFixture, accountDetailFixture, accountCapacityFixture } from "@/test/fixtures";
 import { AccountStatus } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 
 vi.mock("@workspace/api-client-react", async () => {
   const actual = await vi.importActual<typeof import("@workspace/api-client-react")>(
@@ -18,6 +25,8 @@ vi.mock("@workspace/api-client-react", async () => {
     useListAccounts: vi.fn(),
     useGetAccount: vi.fn(),
     useGetAccountCapacities: vi.fn(),
+    useCreateAccount: vi.fn(),
+    useUpdateAccount: vi.fn(),
   };
 });
 
@@ -29,11 +38,40 @@ vi.mock("@/hooks/useGames", async () => {
   };
 });
 
+vi.mock("@tanstack/react-query", async () => {
+  const actual = await vi.importActual<typeof import("@tanstack/react-query")>("@tanstack/react-query");
+  return {
+    ...actual,
+    useQueryClient: vi.fn(),
+  };
+});
+
 function createApiError(message: string, status: number): Error & { status: number; data: unknown } {
   const err = new Error(message) as Error & { status: number; data: unknown };
   err.status = status;
   err.data = { error: message };
   return err;
+}
+
+function makeMutation(mutateAsync: () => Promise<unknown> = () => Promise.resolve()): any {
+  return {
+    mutateAsync,
+    mutate: vi.fn(),
+    isPending: false,
+    isError: false,
+    isSuccess: false,
+    isIdle: true,
+    data: undefined,
+    error: null,
+    reset: vi.fn(),
+    variables: undefined,
+    status: "idle" as const,
+    submittedAt: 0,
+    failureCount: 0,
+    failureReason: null,
+    context: undefined,
+    isPaused: false,
+  };
 }
 
 function RoutedGameDetailPage() {
@@ -83,11 +121,18 @@ function renderGameDetail(initialRoute: string) {
 }
 
 describe("GameDetailPage Account workspace", () => {
+  let invalidateQueries: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
+    invalidateQueries = vi.fn();
+    vi.mocked(useQueryClient).mockReturnValue({ invalidateQueries } as unknown as ReturnType<typeof useQueryClient>);
+
     vi.mocked(useGetAccount).mockReturnValue(
       mockAccountDetail(accountDetailFixture(), "success"),
     );
     vi.mocked(useGetAccountCapacities).mockReturnValue(mockCapacities([], "success"));
+    vi.mocked(useCreateAccount).mockReturnValue(makeMutation());
+    vi.mocked(useUpdateAccount).mockReturnValue(makeMutation());
   });
 
   it("renders Account list loading", () => {
@@ -198,13 +243,15 @@ describe("GameDetailPage Account workspace", () => {
     expect(screen.queryByText("TEST-001")).not.toBeInTheDocument();
   });
 
-  it("does not render create/edit/delete/status mutation controls for accounts", () => {
+  it("renders Add Account and Edit controls but not Delete or Status Override", () => {
     mockGamesContext();
-    vi.mocked(useListAccounts).mockReturnValue(mockListAccounts([], "success"));
+    const accounts = [accountListItemFixture({ id: "acc-1", displayNumber: "TEST-001" })];
+    vi.mocked(useListAccounts).mockReturnValue(mockListAccounts(accounts, "success"));
     renderGameDetail("/games/game-1");
-    expect(screen.queryByText("افزودن اکانت")).not.toBeInTheDocument();
-    expect(screen.queryByText("حذف اکانت")).not.toBeInTheDocument();
-    expect(screen.queryByText(/ویرایش اکانت/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /افزودن اکانت/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /ویرایش اکانت/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /حذف اکانت/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /تغییر وضعیت اکانت/i })).not.toBeInTheDocument();
   });
 
   it("does not mount legacy mutation components in the active path", () => {
@@ -214,5 +261,55 @@ describe("GameDetailPage Account workspace", () => {
     // The legacy AccountFormModal and AccountCard (mutation version) are not imported in the active path.
     expect(screen.queryByText(/Backup Code/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/وضعیت اکانت/i)).not.toBeInTheDocument();
+  });
+
+  describe("Create Account integration", () => {
+    it("opens CreateAccountDialog when Add Account is clicked", () => {
+      mockGamesContext();
+      vi.mocked(useListAccounts).mockReturnValue(mockListAccounts([], "success"));
+      renderGameDetail("/games/game-1");
+      fireEvent.click(screen.getByRole("button", { name: /افزودن اکانت/i }));
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(screen.getByText("افزودن اکانت جدید")).toBeInTheDocument();
+    });
+  });
+
+  describe("Edit Account integration", () => {
+    it("opens EditAccountDialog from the account card edit button", () => {
+      mockGamesContext();
+      const accounts = [accountListItemFixture({ id: "acc-1", displayNumber: "TEST-001" })];
+      vi.mocked(useListAccounts).mockReturnValue(mockListAccounts(accounts, "success"));
+      renderGameDetail("/games/game-1");
+      fireEvent.click(screen.getByRole("button", { name: /ویرایش اکانت/i }));
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(screen.getByText("ویرایش اکانت")).toBeInTheDocument();
+    });
+
+    it("opens EditAccountDialog from the account details modal", () => {
+      mockGamesContext();
+      const accounts = [accountListItemFixture({ id: "acc-1", displayNumber: "TEST-001" })];
+      vi.mocked(useListAccounts).mockReturnValue(mockListAccounts(accounts, "success"));
+      vi.mocked(useGetAccount).mockReturnValue(mockAccountDetail(accountDetailFixture(), "success"));
+      vi.mocked(useGetAccountCapacities).mockReturnValue(mockCapacities([], "success"));
+      renderGameDetail("/games/game-1");
+      fireEvent.click(screen.getByLabelText("مشاهده جزئیات اکانت"));
+      fireEvent.click(screen.getAllByRole("button", { name: /ویرایش اکانت/i })[0]);
+      expect(screen.getByText("ویرایش اکانت")).toBeInTheDocument();
+    });
+
+    it("closes the detail modal before opening EditAccountDialog", () => {
+      mockGamesContext();
+      const accounts = [accountListItemFixture({ id: "acc-1", displayNumber: "TEST-001" })];
+      vi.mocked(useListAccounts).mockReturnValue(mockListAccounts(accounts, "success"));
+      vi.mocked(useGetAccount).mockReturnValue(mockAccountDetail(accountDetailFixture(), "success"));
+      vi.mocked(useGetAccountCapacities).mockReturnValue(mockCapacities([], "success"));
+      renderGameDetail("/games/game-1");
+      fireEvent.click(screen.getByLabelText("مشاهده جزئیات اکانت"));
+      const detailModal = screen.getByRole("dialog");
+      fireEvent.click(screen.getAllByRole("button", { name: /ویرایش اکانت/i })[0]);
+      // The detail modal should be replaced by the edit dialog; the same dialog role remains.
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(screen.queryByText("جزئیات اکانت")).not.toBeInTheDocument();
+    });
   });
 });

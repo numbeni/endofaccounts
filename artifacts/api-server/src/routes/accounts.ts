@@ -51,6 +51,20 @@ router.param("id", requireUuidParam("id"));
 const ACCOUNT_OPS_DISABLED = "Account operations are not authorized";
 const ACCOUNT_DELETE_DISABLED = "Account operations are currently disabled";
 
+/**
+ * Account mutations are enabled in development and staging so operators can
+ * run integration verification, but are hard-disabled in production. The gate
+ * is checked at router startup; changing the environment requires a restart.
+ */
+function accountOpsEnabled(): boolean {
+  // Treat unknown/missing values as development/staging (enabled) so the local
+  // workspace and disposable test databases can run integration tests. Only
+  // an explicit production marker disables the routes.
+  const nodeEnv = process.env.NODE_ENV;
+  const replitEnv = process.env.REPLIT_ENVIRONMENT;
+  return nodeEnv !== "production" && replitEnv !== "production";
+}
+
 const PERSIAN = {
   GAME_NOT_FOUND: "بازی یافت نشد",
   ACCOUNT_NOT_FOUND: "اکانت یافت نشد",
@@ -452,22 +466,33 @@ router.get(
   },
 );
 
-/** POST /games/:gameId/accounts — disabled; account creation is not authorized. */
-router.post("/games/:gameId/accounts", async (_req: Request, res: Response) => {
-  res.status(403).json({ error: ACCOUNT_OPS_DISABLED, code: "ACCOUNT_OPS_DISABLED" });
-});
+if (accountOpsEnabled()) {
+  /** POST /games/:gameId/accounts — enabled in development/staging only. */
+  router.post("/games/:gameId/accounts", createAccountHandler);
 
-/** PATCH /accounts/:id — disabled; account editing is not authorized. */
-router.patch("/accounts/:id", async (_req: Request, res: Response) => {
-  res.status(403).json({ error: ACCOUNT_OPS_DISABLED, code: "ACCOUNT_OPS_DISABLED" });
-});
+  /** PATCH /accounts/:id — enabled in development/staging only. */
+  router.patch("/accounts/:id", updateAccountHandler);
 
-/** PATCH /accounts/:id/status-override — disabled; account status override is not authorized. */
-router.patch("/accounts/:id/status-override", async (_req: Request, res: Response) => {
-  res.status(403).json({ error: ACCOUNT_OPS_DISABLED, code: "ACCOUNT_OPS_DISABLED" });
-});
+  /** PATCH /accounts/:id/status-override — enabled in development/staging only. */
+  router.patch("/accounts/:id/status-override", setAccountStatusOverrideHandler);
+} else {
+  /** POST /games/:gameId/accounts — disabled in production. */
+  router.post("/games/:gameId/accounts", async (_req: Request, res: Response) => {
+    res.status(403).json({ error: ACCOUNT_OPS_DISABLED, code: "ACCOUNT_OPS_DISABLED" });
+  });
 
-/** DELETE /accounts/:id — disabled; account deletion is not authorized. */
+  /** PATCH /accounts/:id — disabled in production. */
+  router.patch("/accounts/:id", async (_req: Request, res: Response) => {
+    res.status(403).json({ error: ACCOUNT_OPS_DISABLED, code: "ACCOUNT_OPS_DISABLED" });
+  });
+
+  /** PATCH /accounts/:id/status-override — disabled in production. */
+  router.patch("/accounts/:id/status-override", async (_req: Request, res: Response) => {
+    res.status(403).json({ error: ACCOUNT_OPS_DISABLED, code: "ACCOUNT_OPS_DISABLED" });
+  });
+}
+
+/** DELETE /accounts/:id — always disabled; account deletion is not authorized. */
 router.delete("/accounts/:id", async (_req: Request, res: Response) => {
   res.status(403).json({ error: ACCOUNT_DELETE_DISABLED, code: "ACCOUNT_OPS_DISABLED" });
 });

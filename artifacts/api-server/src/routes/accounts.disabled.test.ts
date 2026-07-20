@@ -62,6 +62,7 @@ describe("Account mutation routes are disabled", () => {
     const { baseUrl: serverUrl, stop: stopServerFn } = await startApiServer(
       databaseUrl,
       DIST_DIR,
+      { NODE_ENV: "production" },
     );
     baseUrl = serverUrl;
     stopServer = stopServerFn;

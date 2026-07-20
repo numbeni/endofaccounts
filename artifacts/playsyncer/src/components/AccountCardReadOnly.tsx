@@ -8,6 +8,7 @@ import {
   AlertCircle,
   RefreshCw,
   Eye,
+  Pencil,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type {
@@ -30,6 +31,7 @@ interface Props {
   gameTitle: string;
   platform: Platform;
   onViewDetails?: (accountId: string) => void;
+  onEdit?: (accountId: string) => void;
 }
 
 export function AccountCardReadOnly({
@@ -37,6 +39,7 @@ export function AccountCardReadOnly({
   gameTitle,
   platform,
   onViewDetails,
+  onEdit,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [copiedNumber, setCopiedNumber] = useState(false);
@@ -142,6 +145,18 @@ export function AccountCardReadOnly({
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
+          {onEdit && (
+            <button
+              type="button"
+              onClick={() => onEdit(account.id)}
+              title="ویرایش اکانت"
+              className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+              aria-label="ویرایش اکانت"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+          )}
+
           {onViewDetails && (
             <button
               type="button"
