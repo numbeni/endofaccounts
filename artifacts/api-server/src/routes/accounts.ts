@@ -243,7 +243,10 @@ export async function createAccountHandler(
       return;
     }
     if (err instanceof EncryptionError) {
-      logger.error(err, "Encryption configuration error during account creation");
+      logger.error(
+        { operation: "create", errorCategory: err.constructor.name, code: "ENCRYPTION_ERROR" },
+        "Encryption configuration error during account creation",
+      );
       next(new HttpError(500, PERSIAN.INTERNAL_ERROR, "INTERNAL_ERROR"));
       return;
     }
@@ -290,7 +293,10 @@ export async function updateAccountHandler(
       return;
     }
     if (err instanceof EncryptionError) {
-      logger.error(err, "Encryption configuration error during account update");
+      logger.error(
+        { operation: "update", errorCategory: err.constructor.name, code: "ENCRYPTION_ERROR" },
+        "Encryption configuration error during account update",
+      );
       next(new HttpError(500, PERSIAN.INTERNAL_ERROR, "INTERNAL_ERROR"));
       return;
     }

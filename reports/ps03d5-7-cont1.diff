@@ -1,0 +1,827 @@
+diff --git a/.replit b/.replit
+index c9a6217..1245b19 100644
+--- a/.replit
++++ b/.replit
+@@ -1,4 +1,4 @@
+-modules = ["nodejs-20", "web"]
++modules = ["nodejs-24", "python-base-3.13", "postgresql-16", "web"]
+ 
+ [deployment]
+ router = "application"
+diff --git a/artifacts/api-server/package.json b/artifacts/api-server/package.json
+index e169029..4207b9e 100644
+--- a/artifacts/api-server/package.json
++++ b/artifacts/api-server/package.json
+@@ -8,7 +8,7 @@
+     "build": "node ./build.mjs",
+     "start": "node --enable-source-maps ./dist/index.mjs",
+     "typecheck": "tsc -p tsconfig.json --noEmit",
+-    "test": "for f in src/lib/*.test.ts src/routes/*.test.ts src/services/**/*.test.ts; do tsx --test \"$f\" || exit 1; done"
++    "test": "node --import ./test-loader.mjs --test src/lib/*.test.ts src/routes/*.test.ts src/services/**/*.test.ts"
+   },
+   "dependencies": {
+     "@workspace/api-zod": "workspace:*",
+@@ -31,7 +31,6 @@
+     "esbuild-plugin-pino": "^2.3.3",
+     "pg": "^8.22.0",
+     "pino-pretty": "^13.1.3",
+-    "thread-stream": "3.1.0",
+-    "tsx": "catalog:"
++    "thread-stream": "3.1.0"
+   }
+ }
+diff --git a/artifacts/api-server/src/lib/sensitive-redaction.test.ts b/artifacts/api-server/src/lib/sensitive-redaction.test.ts
+index 6f2ae48..43296a8 100644
+--- a/artifacts/api-server/src/lib/sensitive-redaction.test.ts
++++ b/artifacts/api-server/src/lib/sensitive-redaction.test.ts
+@@ -1,6 +1,6 @@
+ import { describe, it } from "node:test";
+ import assert from "node:assert";
+-import { redactForLog, safeAccountErrorContext } from "./sensitive-redaction.ts";
++import { redactForLog } from "./sensitive-redaction.ts";
+ 
+ describe("redactForLog", () => {
+   it("redacts plaintext passwords", () => {
+@@ -58,15 +58,3 @@ describe("redactForLog", () => {
+     assert.strictEqual(result.message, "[REDACTED]");
+   });
+ });
+-
+-describe("safeAccountErrorContext", () => {
+-  it("returns safe operation context without secrets", () => {
+-    const err = new Error("insert failed: psnEmail=operator@example.com");
+-    const ctx = safeAccountErrorContext("create", err);
+-    assert.strictEqual(ctx.operation, "create");
+-    assert.strictEqual(ctx.errorCategory, "Error");
+-    assert.strictEqual(ctx.safeMessage, "[REDACTED]");
+-    const safeError = ctx.safeError as { message: string };
+-    assert.strictEqual(safeError.message, "[REDACTED]");
+-  });
+-});
+diff --git a/artifacts/api-server/src/lib/sensitive-redaction.ts b/artifacts/api-server/src/lib/sensitive-redaction.ts
+index 3394f02..c208269 100644
+--- a/artifacts/api-server/src/lib/sensitive-redaction.ts
++++ b/artifacts/api-server/src/lib/sensitive-redaction.ts
+@@ -133,21 +133,3 @@ function redactString(value: string): string {
+   }
+   return value;
+ }
+-
+-/** Build a safe log context for an Account mutation error. */
+-export function safeAccountErrorContext(
+-  operation: "create" | "update",
+-  err: unknown,
+-): Record<string, unknown> {
+-  const errorName = err instanceof Error ? err.name : typeof err;
+-  const errorMessage = err instanceof Error ? err.message : String(err);
+-  const safeMessage = redactString(errorMessage);
+-  const safeError = redactForLog(err);
+-
+-  return {
+-    operation,
+-    errorCategory: errorName,
+-    safeMessage,
+-    safeError,
+-  };
+-}
+diff --git a/artifacts/api-server/src/routes/accounts.mutation-logging.test.ts b/artifacts/api-server/src/routes/accounts.mutation-logging.test.ts
+new file mode 100644
+index 0000000..5480174
+--- /dev/null
++++ b/artifacts/api-server/src/routes/accounts.mutation-logging.test.ts
+@@ -0,0 +1,158 @@
++import { describe, it, before, after } from "node:test";
++import assert from "node:assert";
++import {
++  createAccountHandler,
++  updateAccountHandler,
++} from "./accounts.ts";
++import { logger } from "../lib/logger.ts";
++import { HttpError } from "../middlewares/error-handler.ts";
++
++const SECRET_INJECTED_VALUE = "injected-super-secret-value-12345";
++
++function buildLoggerSpy() {
++  const calls: { args: unknown[]; msg: string }[] = [];
++  const original = logger.error.bind(logger);
++  logger.error = (...args: unknown[]) => {
++    calls.push({ args: args as unknown[], msg: typeof args[0] === "string" ? args[0] : "" });
++  };
++  return {
++    calls,
++    restore: () => {
++      logger.error = original;
++    },
++  };
++}
++
++function buildNext() {
++  const calls: unknown[] = [];
++  const next = (err: unknown) => {
++    calls.push(err);
++  };
++  return { next, calls };
++}
++
++describe("Account mutation logging safety", () => {
++  before(() => {
++    // Use a value that is clearly secret but does not satisfy Base64 decoding,
++    // so the service throws EncryptionError before any database writes.
++    process.env.PLAYSYNCER_ACCOUNT_MASTER_KEY = SECRET_INJECTED_VALUE;
++  });
++
++  after(() => {
++    delete process.env.PLAYSYNCER_ACCOUNT_MASTER_KEY;
++  });
++
++  it("Create logs only strict safe context and never the injected secret", async () => {
++    const spy = buildLoggerSpy();
++    const { next, calls } = buildNext();
++
++    try {
++      await createAccountHandler(
++        {
++          params: { gameId: "550e8400-e29b-41d4-a716-446655440000" },
++          body: {
++            psnEmail: "test@example.com",
++            psnPassword: "psn-password",
++            emailPassword: "email-password",
++            onlineId: "TestOnlineId",
++            birthDate: "1990-01-01",
++            familyManagementEmail: "family@example.com",
++            backupCodes: ["backup-code"],
++          },
++        } as never,
++        {} as never,
++        next,
++      );
++    } finally {
++      spy.restore();
++    }
++
++    assert.strictEqual(calls.length, 1, "handler forwards exactly one error to next");
++    const err = calls[0] as HttpError;
++    assert.strictEqual(err.statusCode, 500);
++    assert.strictEqual(err.code, "INTERNAL_ERROR");
++    assert.strictEqual(err.message, "خطای داخلی رخ داد");
++
++    assert.strictEqual(spy.calls.length, 1, "logger.error was called once");
++    const logArg = spy.calls[0]!.args[0];
++    const serialized = JSON.stringify(logArg).toLowerCase();
++    assert.ok(
++      !(logArg instanceof Error),
++      "logger.error must not receive a raw Error object",
++    );
++    assert.ok(
++      !serialized.includes(SECRET_INJECTED_VALUE.toLowerCase()),
++      "log output must not contain the injected secret",
++    );
++    assert.ok(!serialized.includes("password"), "log output must not contain password");
++    assert.ok(!serialized.includes("email"), "log output must not contain email");
++    assert.ok(!serialized.includes("backup"), "log output must not contain backup code");
++    assert.ok(!serialized.includes("secret"), "log output must not contain secret");
++    assert.ok(!serialized.includes("stack"), "log output must not contain stack");
++    assert.ok(
++      !serialized.includes("message"),
++      "log output must not contain raw error message",
++    );
++
++    assert.strictEqual((logArg as { operation: string }).operation, "create");
++    assert.strictEqual((logArg as { code: string }).code, "ENCRYPTION_ERROR");
++    assert.strictEqual(
++      (logArg as { errorCategory: string }).errorCategory,
++      "EncryptionError",
++    );
++  });
++
++  it("Update logs only strict safe context and never the injected secret", async () => {
++    const spy = buildLoggerSpy();
++    const { next, calls } = buildNext();
++
++    try {
++      await updateAccountHandler(
++        {
++          params: { id: "550e8400-e29b-41d4-a716-446655440001" },
++          body: {
++            onlineId: "UpdatedOnlineId",
++          },
++        } as never,
++        {} as never,
++        next,
++      );
++    } finally {
++      spy.restore();
++    }
++
++    assert.strictEqual(calls.length, 1, "handler forwards exactly one error to next");
++    const err = calls[0] as HttpError;
++    assert.strictEqual(err.statusCode, 500);
++    assert.strictEqual(err.code, "INTERNAL_ERROR");
++    assert.strictEqual(err.message, "خطای داخلی رخ داد");
++
++    assert.strictEqual(spy.calls.length, 1, "logger.error was called once");
++    const logArg = spy.calls[0]!.args[0];
++    const serialized = JSON.stringify(logArg).toLowerCase();
++    assert.ok(
++      !(logArg instanceof Error),
++      "logger.error must not receive a raw Error object",
++    );
++    assert.ok(
++      !serialized.includes(SECRET_INJECTED_VALUE.toLowerCase()),
++      "log output must not contain the injected secret",
++    );
++    assert.ok(!serialized.includes("password"), "log output must not contain password");
++    assert.ok(!serialized.includes("email"), "log output must not contain email");
++    assert.ok(!serialized.includes("backup"), "log output must not contain backup code");
++    assert.ok(!serialized.includes("secret"), "log output must not contain secret");
++    assert.ok(!serialized.includes("stack"), "log output must not contain stack");
++    assert.ok(
++      !serialized.includes("message"),
++      "log output must not contain raw error message",
++    );
++
++    assert.strictEqual((logArg as { operation: string }).operation, "update");
++    assert.strictEqual((logArg as { code: string }).code, "ENCRYPTION_ERROR");
++    assert.strictEqual(
++      (logArg as { errorCategory: string }).errorCategory,
++      "EncryptionError",
++    );
++  });
++});
+diff --git a/artifacts/api-server/src/routes/accounts.runtime-gate.test.ts b/artifacts/api-server/src/routes/accounts.runtime-gate.test.ts
+index a00297c..8b711c1 100644
+--- a/artifacts/api-server/src/routes/accounts.runtime-gate.test.ts
++++ b/artifacts/api-server/src/routes/accounts.runtime-gate.test.ts
+@@ -25,6 +25,20 @@ const validRequest = () => ({
+   backupCodes: ["code1"],
+ });
+ 
++/**
++ * Build a clean process environment so inherited shell/CI variables cannot
++ * influence the runtime gate under test. Only values we explicitly set below
++ * are passed to the server.
++ */
++function cleanProcessEnv(): NodeJS.ProcessEnv {
++  return {
++    PATH: process.env.PATH ?? "",
++    HOME: process.env.HOME ?? "",
++    LANG: process.env.LANG ?? "",
++    LOG_LEVEL: process.env.LOG_LEVEL ?? "silent",
++  };
++}
++
+ async function createGame(baseUrl: string) {
+   const res = await fetch(`${baseUrl}/games`, {
+     method: "POST",
+@@ -38,15 +52,32 @@ async function createGame(baseUrl: string) {
+   return data.game.id;
+ }
+ 
++async function createAccount(
++  baseUrl: string,
++  gameId: string,
++  overrides: Record<string, unknown> = {},
++): Promise<{ id: string; onlineId: string }> {
++  const res = await fetch(`${baseUrl}/games/${gameId}/accounts`, {
++    method: "POST",
++    headers: { "Content-Type": "application/json" },
++    body: JSON.stringify({ ...validRequest(), ...overrides }),
++  });
++  assert.strictEqual(res.status, 201);
++  const data = (await res.json()) as { account: { id: string; onlineId: string } };
++  return data.account;
++}
++
+ async function startServerWithEnv(env: Record<string, string>) {
+   const { databaseUrl, stop: stopPg } = await startTestPg();
+ 
+   execSync("pnpm run build", {
+     cwd: path.resolve(__dirname, "..", ".."),
+     env: {
+-      ...process.env,
++      ...cleanProcessEnv(),
+       PORT: "8080",
+       BASE_PATH: "/api-server",
++      DATABASE_URL: databaseUrl,
++      PLAYSYNCER_ACCOUNT_MASTER_KEY: TEST_MASTER_KEY,
+     },
+     stdio: "ignore",
+   });
+@@ -60,7 +91,7 @@ async function startServerWithEnv(env: Record<string, string>) {
+     },
+   );
+ 
+-  return { baseUrl, stop: async () => {
++  return { baseUrl, databaseUrl, stop: async () => {
+     await stopServer();
+     await stopPg();
+   } };
+@@ -75,6 +106,29 @@ async function countAccounts(databaseUrl: string): Promise<number> {
+   return match ? parseInt(match[1], 10) : 0;
+ }
+ 
++async function getAccountOnlineId(
++  databaseUrl: string,
++  accountId: string,
++): Promise<string> {
++  const output = execSync(
++    `psql "${databaseUrl}" -t -c "SELECT online_id FROM accounts WHERE id = '${accountId}';"`,
++    { encoding: "utf-8" },
++  );
++  return output.trim();
++}
++
++async function seedAccount(databaseUrl: string, gameId: string): Promise<string> {
++  const output = execSync(
++    `psql "${databaseUrl}" -c "INSERT INTO accounts (game_id, account_code, account_number_prefix, account_number_seq, display_number, psn_email_encrypted, psn_email_lookup_hash, psn_password_encrypted, psn_password_lookup_hash, email_password_encrypted_v2, email_password_lookup_hash, family_management_email_encrypted_v2, family_management_email_lookup_hash, online_id, birth_date) VALUES ('${gameId}', 'ACC-SEED-001', 'SEED', 1, 'SEED-001', 'enc', 'hash', 'enc', 'hash', 'enc', 'hash', 'enc', 'hash', 'SeedOnlineId', '1990-01-01') RETURNING id;"`,
++    { encoding: "utf-8" },
++  );
++  const match = output.match(
++    /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/,
++  );
++  assert.ok(match, "seed account returned a valid id");
++  return match![1]!;
++}
++
+ async function testDisabled(
+   env: Record<string, string>,
+   description: string,
+@@ -84,13 +138,15 @@ async function testDisabled(
+     let stop: () => Promise<void>;
+     let databaseUrl: string;
+     let gameId: string;
++    let accountId: string;
+ 
+     before(async () => {
+       const ctx = await startServerWithEnv(env);
+       baseUrl = ctx.baseUrl;
+       stop = ctx.stop;
+-      // databaseUrl is not exposed by startServerWithEnv; rely on row count via fetch fallback.
++      databaseUrl = ctx.databaseUrl;
+       gameId = await createGame(baseUrl);
++      accountId = await seedAccount(databaseUrl, gameId);
+     });
+ 
+     after(async () => {
+@@ -98,11 +154,7 @@ async function testDisabled(
+     });
+ 
+     it("POST /games/:gameId/accounts returns 403 and writes nothing", async () => {
+-      const listBefore = await fetch(`${baseUrl}/games/${gameId}/accounts`);
+-      const beforeData = (await listBefore.json()) as {
+-        accounts: unknown[];
+-      };
+-      const before = beforeData.accounts.length;
++      const before = await countAccounts(databaseUrl);
+ 
+       const res = await fetch(`${baseUrl}/games/${gameId}/accounts`, {
+         method: "POST",
+@@ -114,23 +166,26 @@ async function testDisabled(
+       assert.strictEqual(data.error, "Account operations are not authorized");
+       assert.strictEqual(data.code, "ACCOUNT_OPS_DISABLED");
+ 
+-      const listAfter = await fetch(`${baseUrl}/games/${gameId}/accounts`);
+-      const afterData = (await listAfter.json()) as {
+-        accounts: unknown[];
+-      };
+-      assert.strictEqual(afterData.accounts.length, before);
++      const after = await countAccounts(databaseUrl);
++      assert.strictEqual(after, before);
+     });
+ 
+-    it("PATCH /accounts/:id returns 403 and writes nothing", async () => {
+-      const res = await fetch(`${baseUrl}/accounts/${gameId}`, {
++    it("PATCH /accounts/:id returns 403 and does not modify the persisted row", async () => {
++      const before = await getAccountOnlineId(databaseUrl, accountId);
++      assert.notStrictEqual(before, "PatchedOnlineId");
++
++      const res = await fetch(`${baseUrl}/accounts/${accountId}`, {
+         method: "PATCH",
+         headers: { "Content-Type": "application/json" },
+-        body: JSON.stringify({ onlineId: "new-id" }),
++        body: JSON.stringify({ onlineId: "PatchedOnlineId" }),
+       });
+       assert.strictEqual(res.status, 403);
+       const data = (await res.json()) as ErrorResponse;
+       assert.strictEqual(data.error, "Account operations are not authorized");
+       assert.strictEqual(data.code, "ACCOUNT_OPS_DISABLED");
++
++      const after = await getAccountOnlineId(databaseUrl, accountId);
++      assert.strictEqual(after, before);
+     });
+   });
+ }
+@@ -157,7 +212,9 @@ await testDisabled(
+ describe("Account mutation routes are enabled in development with explicit true flag", () => {
+   let baseUrl: string;
+   let stop: () => Promise<void>;
++  let databaseUrl: string;
+   let gameId: string;
++  let accountId: string;
+ 
+   before(async () => {
+     const ctx = await startServerWithEnv({
+@@ -166,6 +223,7 @@ describe("Account mutation routes are enabled in development with explicit true
+     });
+     baseUrl = ctx.baseUrl;
+     stop = ctx.stop;
++    databaseUrl = ctx.databaseUrl;
+     gameId = await createGame(baseUrl);
+   });
+ 
+@@ -174,22 +232,42 @@ describe("Account mutation routes are enabled in development with explicit true
+   });
+ 
+   it("POST /games/:gameId/accounts returns 201 and creates an Account", async () => {
+-    const res = await fetch(`${baseUrl}/games/${gameId}/accounts`, {
+-      method: "POST",
+-      headers: { "Content-Type": "application/json" },
+-      body: JSON.stringify(validRequest()),
+-    });
+-    assert.strictEqual(res.status, 201);
+-    const data = (await res.json()) as { account: { id: string } };
+-    assert.ok(data.account.id);
++    const account = await createAccount(baseUrl, gameId);
++    accountId = account.id;
+ 
+     const listRes = await fetch(`${baseUrl}/games/${gameId}/accounts`);
+     const listData = (await listRes.json()) as { accounts: unknown[] };
+     assert.strictEqual(listData.accounts.length, 1);
+   });
+ 
++  it("PATCH /accounts/:id returns 200 and persists the change after a fresh GET", async () => {
++    assert.ok(accountId, "an account was created in the previous test");
++
++    const patchRes = await fetch(`${baseUrl}/accounts/${accountId}`, {
++      method: "PATCH",
++      headers: { "Content-Type": "application/json" },
++      body: JSON.stringify({ onlineId: "UpdatedGateOnlineId" }),
++    });
++    assert.strictEqual(patchRes.status, 200);
++    const patchData = (await patchRes.json()) as {
++      account: { id: string; onlineId: string };
++    };
++    assert.strictEqual(patchData.account.id, accountId);
++    assert.strictEqual(patchData.account.onlineId, "UpdatedGateOnlineId");
++
++    const getRes = await fetch(`${baseUrl}/accounts/${accountId}`);
++    const getData = (await getRes.json()) as {
++      account: { id: string; onlineId: string };
++    };
++    assert.strictEqual(getData.account.onlineId, "UpdatedGateOnlineId");
++
++    const persisted = await getAccountOnlineId(databaseUrl, accountId);
++    assert.strictEqual(persisted, "UpdatedGateOnlineId");
++  });
++
+   it("Status Override remains disabled even with the flag", async () => {
+-    const res = await fetch(`${baseUrl}/accounts/${gameId}/status-override`, {
++    assert.ok(accountId, "an account exists");
++    const res = await fetch(`${baseUrl}/accounts/${accountId}/status-override`, {
+       method: "PATCH",
+       headers: { "Content-Type": "application/json" },
+       body: JSON.stringify({ statusOverride: "SOLD" }),
+@@ -201,7 +279,8 @@ describe("Account mutation routes are enabled in development with explicit true
+   });
+ 
+   it("Delete remains disabled even with the flag", async () => {
+-    const res = await fetch(`${baseUrl}/accounts/${gameId}`, {
++    assert.ok(accountId, "an account exists");
++    const res = await fetch(`${baseUrl}/accounts/${accountId}`, {
+       method: "DELETE",
+     });
+     assert.strictEqual(res.status, 403);
+diff --git a/artifacts/api-server/src/routes/accounts.ts b/artifacts/api-server/src/routes/accounts.ts
+index c62814a..0e83f4d 100644
+--- a/artifacts/api-server/src/routes/accounts.ts
++++ b/artifacts/api-server/src/routes/accounts.ts
+@@ -243,7 +243,10 @@ export async function createAccountHandler(
+       return;
+     }
+     if (err instanceof EncryptionError) {
+-      logger.error(err, "Encryption configuration error during account creation");
++      logger.error(
++        { operation: "create", errorCategory: err.constructor.name, code: "ENCRYPTION_ERROR" },
++        "Encryption configuration error during account creation",
++      );
+       next(new HttpError(500, PERSIAN.INTERNAL_ERROR, "INTERNAL_ERROR"));
+       return;
+     }
+@@ -290,7 +293,10 @@ export async function updateAccountHandler(
+       return;
+     }
+     if (err instanceof EncryptionError) {
+-      logger.error(err, "Encryption configuration error during account update");
++      logger.error(
++        { operation: "update", errorCategory: err.constructor.name, code: "ENCRYPTION_ERROR" },
++        "Encryption configuration error during account update",
++      );
+       next(new HttpError(500, PERSIAN.INTERNAL_ERROR, "INTERNAL_ERROR"));
+       return;
+     }
+diff --git a/artifacts/playsyncer/src/pages/GameDetailPage-account-ops.test.tsx b/artifacts/playsyncer/src/pages/GameDetailPage-account-ops.test.tsx
+index 7da96e7..7ad95b8 100644
+--- a/artifacts/playsyncer/src/pages/GameDetailPage-account-ops.test.tsx
++++ b/artifacts/playsyncer/src/pages/GameDetailPage-account-ops.test.tsx
+@@ -16,6 +16,7 @@ import { mockListAccounts, mockAccountDetail, mockCapacities } from "@/test/mock
+ import { render } from "@/test/render";
+ import { gameFixture, accountListItemFixture, accountDetailFixture } from "@/test/fixtures";
+ import { useQueryClient } from "@tanstack/react-query";
++import { accountMutationsEnabled } from "@/features/account-write/accountMutationsEnabled";
+ import type { AccountListItem } from "@workspace/api-client-react";
+ 
+ vi.mock("@workspace/api-client-react", async () => {
+@@ -150,6 +151,7 @@ describe("GameDetailPage Account operations wiring", () => {
+     vi.mocked(useGetAccountCapacities).mockReturnValue(mockCapacities([], "success"));
+     vi.mocked(useCreateAccount).mockReturnValue(makeMutation());
+     vi.mocked(useUpdateAccount).mockReturnValue(makeMutation());
++    vi.mocked(accountMutationsEnabled).mockReturnValue(true);
+   });
+ 
+   it("passes the current gameId to CreateAccountDialog", () => {
+diff --git a/artifacts/playsyncer/src/pages/GameDetailPage.test.tsx b/artifacts/playsyncer/src/pages/GameDetailPage.test.tsx
+index 127de70..b478a10 100644
+--- a/artifacts/playsyncer/src/pages/GameDetailPage.test.tsx
++++ b/artifacts/playsyncer/src/pages/GameDetailPage.test.tsx
+@@ -59,7 +59,7 @@ function createApiError(message: string, status: number): Error & { status: numb
+   return err;
+ }
+ 
+-function makeMutation(mutateAsync: () => Promise<unknown> = () => Promise.resolve()): any {
++function makeMutation(mutateAsync: () => Promise<unknown> = vi.fn().mockResolvedValue(undefined)): any {
+   return {
+     mutateAsync,
+     mutate: vi.fn(),
+@@ -139,6 +139,7 @@ describe("GameDetailPage Account workspace", () => {
+     vi.mocked(useGetAccountCapacities).mockReturnValue(mockCapacities([], "success"));
+     vi.mocked(useCreateAccount).mockReturnValue(makeMutation());
+     vi.mocked(useUpdateAccount).mockReturnValue(makeMutation());
++    vi.mocked(accountMutationsEnabled).mockReturnValue(true);
+   });
+ 
+   it("renders Account list loading", () => {
+@@ -329,6 +330,43 @@ describe("GameDetailPage Account workspace", () => {
+       expect(screen.queryByRole("button", { name: /افزودن اکانت/i })).not.toBeInTheDocument();
+       expect(screen.queryByRole("button", { name: /ویرایش اکانت/i })).not.toBeInTheDocument();
+     });
++
++    it("does not mount Account Write dialogs when account mutations are disabled", () => {
++      vi.mocked(accountMutationsEnabled).mockReturnValue(false);
++      mockGamesContext();
++      const accounts = [accountListItemFixture({ id: "acc-1", displayNumber: "TEST-001" })];
++      vi.mocked(useListAccounts).mockReturnValue(mockListAccounts(accounts, "success"));
++      renderGameDetail("/games/game-1");
++      expect(screen.queryByText("افزودن اکانت جدید")).not.toBeInTheDocument();
++      expect(screen.queryByText("ویرایش اکانت")).not.toBeInTheDocument();
++      expect(vi.mocked(useCreateAccount)).not.toHaveBeenCalled();
++      expect(vi.mocked(useUpdateAccount)).not.toHaveBeenCalled();
++    });
++  });
++
++  describe("Create and Edit mutual exclusion", () => {
++    it("Create and Edit dialogs cannot be open simultaneously", () => {
++      mockGamesContext();
++      const accounts = [accountListItemFixture({ id: "acc-1", displayNumber: "TEST-001" })];
++      vi.mocked(useListAccounts).mockReturnValue(mockListAccounts(accounts, "success"));
++      renderGameDetail("/games/game-1");
++
++      const editButtons = screen.getAllByRole("button", { name: /ویرایش اکانت/i });
++      assert.ok(editButtons.length > 0);
++      const editButton = editButtons[0]!;
++
++      fireEvent.click(screen.getByRole("button", { name: /افزودن اکانت/i }));
++      expect(screen.getByText("افزودن اکانت جدید")).toBeInTheDocument();
++      expect(screen.queryByText("ویرایش اکانت")).not.toBeInTheDocument();
++
++      fireEvent.click(editButton);
++      expect(screen.queryByText("افزودن اکانت جدید")).not.toBeInTheDocument();
++      expect(screen.getByText("ویرایش اکانت")).toBeInTheDocument();
++
++      fireEvent.click(screen.getByRole("button", { name: /افزودن اکانت/i }));
++      expect(screen.queryByText("ویرایش اکانت")).not.toBeInTheDocument();
++      expect(screen.getByText("افزودن اکانت جدید")).toBeInTheDocument();
++    });
+   });
+ 
+   describe("Inactive Game behavior", () => {
+@@ -340,6 +378,33 @@ describe("GameDetailPage Account workspace", () => {
+       expect(addButton).toBeDisabled();
+       expect(screen.getByText(PERSIAN_INACTIVE_GAME_CREATE_DISABLED)).toBeInTheDocument();
+     });
++
++    it("does not send any Create request when the Add Account button is disabled", () => {
++      const mutateAsync = vi.fn().mockResolvedValue(undefined);
++      vi.mocked(useCreateAccount).mockReturnValue(makeMutation(mutateAsync));
++      mockGamesContext({ games: [{ ...gameFixture, coverUrl: "https://example.com/cover.jpg", status: "INACTIVE" }] });
++      vi.mocked(useListAccounts).mockReturnValue(mockListAccounts([], "success"));
++      renderGameDetail("/games/game-1");
++
++      const addButton = screen.getByRole("button", { name: /افزودن اکانت/i });
++      fireEvent.click(addButton);
++      expect(mutateAsync).not.toHaveBeenCalled();
++      expect(screen.queryByText("افزودن اکانت جدید")).not.toBeInTheDocument();
++    });
++  });
++
++  describe("Error display safety", () => {
++    it("never renders a raw error.message on the Game detail page", () => {
++      const rawMessage = "RAW_SECRET_ERROR_MESSAGE_9472";
++      mockGamesContext({
++        isLoading: false,
++        isError: true,
++        error: createApiError(rawMessage, 500),
++      });
++      vi.mocked(useListAccounts).mockReturnValue(mockListAccounts([], "success"));
++      renderGameDetail("/games/game-1");
++      expect(screen.queryByText(rawMessage)).not.toBeInTheDocument();
++    });
+   });
+ 
+   describe("Cross-Game state safety", () => {
+diff --git a/artifacts/playsyncer/src/pages/GameDetailPage.tsx b/artifacts/playsyncer/src/pages/GameDetailPage.tsx
+index 58827a3..0ad810f 100644
+--- a/artifacts/playsyncer/src/pages/GameDetailPage.tsx
++++ b/artifacts/playsyncer/src/pages/GameDetailPage.tsx
+@@ -140,7 +140,16 @@ export default function GameDetailPage() {
+     }
+   };
+ 
++  const handleCreateOpen = () => {
++    if (!isActive) return;
++    setDetailAccountId(null);
++    setEditOpen(false);
++    setEditAccountId(null);
++    setCreateOpen(true);
++  };
++
+   const handleEditRequest = (accountId: string) => {
++    setCreateOpen(false);
+     setEditAccountId(accountId);
+     setEditOpen(true);
+     setDetailAccountId(null);
+@@ -254,7 +263,7 @@ export default function GameDetailPage() {
+             {accountOpsEnabled && (
+               <button
+                 type="button"
+-                onClick={() => isActive && setCreateOpen(true)}
++                onClick={handleCreateOpen}
+                 disabled={!isActive}
+                 title={isActive ? undefined : PERSIAN_INACTIVE_GAME_CREATE_DISABLED}
+                 className="inline-flex items-center gap-2 rounded-xl gradient-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-soft transition-all hover:shadow-glow disabled:opacity-50"
+@@ -352,19 +361,23 @@ export default function GameDetailPage() {
+         }
+       />
+ 
+-      <CreateAccountDialog
+-        open={createOpen}
+-        gameId={gameId ?? ""}
+-        onSuccess={handleCreateSuccess}
+-        onClose={() => setCreateOpen(false)}
+-      />
+-
+-      <EditAccountDialog
+-        open={editOpen}
+-        account={editAccount}
+-        onSuccess={handleEditSuccess}
+-        onClose={handleEditClose}
+-      />
++      {accountOpsEnabled && (
++        <CreateAccountDialog
++          open={createOpen}
++          gameId={gameId ?? ""}
++          onSuccess={handleCreateSuccess}
++          onClose={() => setCreateOpen(false)}
++        />
++      )}
++
++      {accountOpsEnabled && (
++        <EditAccountDialog
++          open={editOpen}
++          account={editAccount}
++          onSuccess={handleEditSuccess}
++          onClose={handleEditClose}
++        />
++      )}
+ 
+       <GameFormModal
+         open={formOpen}
+diff --git a/artifacts/playsyncer/src/pages/GamesPage.test.tsx b/artifacts/playsyncer/src/pages/GamesPage.test.tsx
+new file mode 100644
+index 0000000..a6e935d
+--- /dev/null
++++ b/artifacts/playsyncer/src/pages/GamesPage.test.tsx
+@@ -0,0 +1,83 @@
++import { vi, describe, it, expect, beforeEach } from "vitest";
++import { screen, fireEvent } from "@testing-library/react";
++import { Routes, Route } from "react-router-dom";
++import GamesPage from "./GamesPage";
++import { useGames } from "@/hooks/useGames";
++import { render } from "@/test/render";
++import { gameFixture } from "@/test/fixtures";
++
++vi.mock("@/hooks/useGames", async () => {
++  const actual = await vi.importActual<typeof import("@/hooks/useGames")>("@/hooks/useGames");
++  return {
++    ...actual,
++    useGames: vi.fn(),
++  };
++});
++
++function createApiError(message: string, status: number): Error & { status: number; data: unknown } {
++  const err = new Error(message) as Error & { status: number; data: unknown };
++  err.status = status;
++  err.data = { error: message };
++  return err;
++}
++
++function RoutedGamesPage() {
++  return (
++    <Routes>
++      <Route path="/" element={<GamesPage />} />
++    </Routes>
++  );
++}
++
++function mockGamesContext(overrides?: Partial<ReturnType<typeof useGames>>) {
++  vi.mocked(useGames).mockReturnValue({
++    games: [gameFixture],
++    isLoading: false,
++    isError: false,
++    error: null,
++    refetch: vi.fn(),
++    mutations: {
++      addGame: vi.fn(),
++      editGame: vi.fn(),
++      toggleGameStatus: vi.fn(),
++      deleteGame: vi.fn(),
++    },
++    ...overrides,
++  } as unknown as ReturnType<typeof useGames>);
++}
++
++describe("GamesPage", () => {
++  beforeEach(() => {
++    mockGamesContext();
++  });
++
++  it("renders the games list", () => {
++    render(<RoutedGamesPage />, { initialRoute: "/" });
++    expect(screen.getByText("بازی‌ها")).toBeInTheDocument();
++    expect(screen.getByText(gameFixture.title)).toBeInTheDocument();
++  });
++
++  it("never renders raw error.message", () => {
++    const rawMessage = "RAW_SECRET_ERROR_MESSAGE_9472";
++    mockGamesContext({
++      isLoading: false,
++      isError: true,
++      error: createApiError(rawMessage, 500),
++    });
++    render(<RoutedGamesPage />, { initialRoute: "/" });
++    expect(screen.queryByText(rawMessage)).not.toBeInTheDocument();
++  });
++
++  it("calls retry on error", () => {
++    const refetch = vi.fn();
++    mockGamesContext({
++      isLoading: false,
++      isError: true,
++      error: createApiError("server failure", 500),
++      refetch,
++    });
++    render(<RoutedGamesPage />, { initialRoute: "/" });
++    fireEvent.click(screen.getByText("تلاش مجدد"));
++    expect(refetch).toHaveBeenCalled();
++  });
++});
+diff --git a/docs/CURRENT_PHASE.md b/docs/CURRENT_PHASE.md
+index 3284f86..a87378a 100644
+--- a/docs/CURRENT_PHASE.md
++++ b/docs/CURRENT_PHASE.md
+@@ -28,8 +28,11 @@ APPROVED_AND_CLOSED
+ Current sub-stage:
+ PS-03D5-7 — Account Create/Edit Runtime Integration and Verification
+ 
++Current work packet:
++PS-03D5-7-CONT-1 — Source Corrections and Focused Verification
++
+ Current status:
+-IMPLEMENTATION COMPLETE, AWAITING SOURCE REVIEW
++PARTIAL IMPLEMENTATION — FOCUSED CORRECTIONS COMPLETE, AWAITING REVIEW
+ 
+ PS-03D5:
+ NOT CLOSED
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index a4ad5c5..d7a5d25 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -224,9 +224,6 @@ importers:
+       thread-stream:
+         specifier: 3.1.0
+         version: 3.1.0
+-      tsx:
+-        specifier: 'catalog:'
+-        version: 4.22.4
+ 
+   artifacts/mockup-sandbox:
+     devDependencies:

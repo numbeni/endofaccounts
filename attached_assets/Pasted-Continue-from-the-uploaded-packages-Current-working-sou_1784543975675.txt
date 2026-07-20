@@ -1,0 +1,234 @@
+Continue from the uploaded packages:
+
+Current working source:
+endofaccounts-main (1).zip
+
+Previous reference baseline:
+endofaccounts-main.zip
+
+Continue the existing:
+
+PS-03D5-7 — Account Create/Edit Runtime Integration and Verification
+
+Perform only this limited work packet:
+
+PS-03D5-7-CONT-1 — Source Corrections and Focused Verification
+
+Do not restart the phase.
+Preserve the valid Account Create/Edit implementation.
+Do not perform full workspace validation or final phase packaging yet.
+Do not commit.
+
+Before changing files, inspect both packages and separate Facts, Assumptions, Risks, and Recommendations.
+
+## 1. Revert unauthorized infrastructure and dependency changes
+
+Use the previous package only as the reference for these files:
+
+- `.replit`
+- `artifacts/api-server/package.json`
+- `pnpm-lock.yaml`
+
+Restore:
+
+- the previous Replit modules and Node/PostgreSQL configuration
+- the previous API Server test command using `test-loader.mjs`
+- removal of the newly added API Server `tsx` dependency
+- the corresponding lockfile state
+
+Do not revert valid PS-03D5-7 application or test changes.
+
+Do not add, remove, or update dependencies.
+
+## 2. Complete the frontend activation boundary
+
+When Account mutations are disabled:
+
+- do not render Add Account
+- do not provide Edit callbacks
+- do not mount CreateAccountDialog
+- do not mount EditAccountDialog
+- do not instantiate their mutation hooks through hidden components
+
+Render both dialogs only inside the approved frontend gate.
+
+Opening Create must close Edit and Account Details.
+
+Opening Edit must close Create and Account Details.
+
+Add focused tests proving:
+
+- mutation gate disabled → no Add/Edit controls and no Account Write dialogs mounted
+- Create and Edit cannot be open simultaneously
+- changing gameId closes and clears both flows
+- inactive Game sends zero Create requests
+- GamesPage and GameDetailPage never render raw `error.message`
+
+## 3. Complete backend runtime-gate tests
+
+Keep the current fail-closed implementation.
+
+Improve the tests so inherited environment variables cannot affect results.
+
+Prove with real persisted rows:
+
+- missing flag → Create and Update return 403 and perform zero writes
+- false flag → Create and Update return 403 and perform zero writes
+- true flag in development/test → Create succeeds
+- true flag in development/test → Update succeeds and persists after a fresh GET
+- true flag in production → Create and Update return 403 and perform zero writes
+- Status Override remains 403
+- Delete remains 403
+
+Do not use a missing or unrelated ID as the only proof that Update wrote nothing.
+
+## 4. Complete sensitive Account mutation logging
+
+Do not log raw Error objects from Account Create or Update.
+
+Use a strict safe context containing only:
+
+- operation
+- safe error category
+- approved non-sensitive diagnostic code
+
+Do not include:
+
+- raw error message
+- stack
+- request body
+- SQL
+- database parameters
+- emails
+- passwords
+- backup codes
+- encrypted values
+- lookup hashes
+- master key
+
+Remove unused or misleading logging helpers.
+
+Add focused tests that simulate secret-containing Create and Update failures and inspect the actual logger call or serialized log context.
+
+Prove that none of the injected secret values appear in the log output.
+
+The API response must remain:
+
+- HTTP 500
+- code `INTERNAL_ERROR`
+- safe existing Persian message
+
+## 5. Correct phase documentation
+
+Until the entire PS-03D5-7 work is complete, set:
+
+Current sub-stage:
+PS-03D5-7 — Account Create/Edit Runtime Integration and Verification
+
+Current work packet:
+PS-03D5-7-CONT-1 — Source Corrections and Focused Verification
+
+Status:
+PARTIAL IMPLEMENTATION — FOCUSED CORRECTIONS COMPLETE, AWAITING REVIEW
+
+PS-03D5:
+NOT CLOSED
+
+Do not mark PS-03D5-7 complete, approved, or closed.
+
+## 6. Focused validation only
+
+Create:
+
+- reports/ps03d5-7-cont1-execution-log.md
+- reports/ps03d5-7-cont1-validation.txt
+- reports/ps03d5-7-cont1.diff
+- reports/ps03d5-7-cont1-manifest.txt
+
+Run:
+
+1. pnpm install --frozen-lockfile
+2. pnpm --filter @workspace/api-server run typecheck
+3. pnpm --filter @workspace/api-server run test
+4. pnpm --filter @workspace/playsyncer run typecheck
+5. pnpm --filter @workspace/playsyncer run test -- GameDetailPage.test.tsx GameDetailPage-account-ops.test.tsx
+6. git diff --check
+
+Capture the real exit code immediately after each command.
+
+Do not use `|| true` before capturing the exit code.
+
+Do not run:
+
+- pnpm install --no-frozen-lockfile
+- db:migrate
+- full DB validation
+- full workspace build
+- final Runtime Verification
+- final PS-03D5-7 packaging
+
+Never report PASS when command output contains an error.
+
+## 7. Checkpoint package
+
+Create:
+
+playsyncer-ps03d5-7-cont1-source-review.zip
+
+Include the complete current source.
+
+Exclude:
+
+- .git
+- node_modules
+- dist
+- build
+- coverage
+- caches
+- `.env`
+- secrets
+- `.agents`
+- `.local`
+- attached_assets/Pasted-*
+- all old and nested ZIP files
+
+Verify:
+
+- file type
+- unzip -t
+- exact size
+- SHA-256
+- entry count
+- package.json
+- pnpm-lock.yaml
+- lib/
+- artifacts/
+- docs/
+- reports/
+
+## Final response
+
+Use exactly one status:
+
+- PS-03D5-7-CONT-1 — FOCUSED CORRECTIONS COMPLETE, AWAITING REVIEW
+- PS-03D5-7-CONT-1 — VALIDATION FAILURE
+- PS-03D5-7-CONT-1 — RUNTIME GATE BLOCKER
+- PS-03D5-7-CONT-1 — SENSITIVE LOGGING BLOCKER
+- PS-03D5-7-CONT-1 — SCOPE VIOLATION
+- PS-03D5-7-CONT-1 — PACKAGING FAILURE
+
+Then report:
+
+- valid partial work preserved
+- exact files changed
+- unauthorized changes reverted
+- frontend mount-gate proof
+- backend Create/Update gate proof
+- logging safety proof
+- focused test counts
+- all failed attempts and warnings
+- ZIP filename, size, SHA-256, entry count, and unzip result
+- git status --short
+
+Do not start the full PS-03D5-7 validation.
+Do not close PS-03D5.

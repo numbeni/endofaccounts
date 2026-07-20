@@ -59,7 +59,7 @@ function createApiError(message: string, status: number): Error & { status: numb
   return err;
 }
 
-function makeMutation(mutateAsync: () => Promise<unknown> = () => Promise.resolve()): any {
+function makeMutation(mutateAsync: () => Promise<unknown> = vi.fn().mockResolvedValue(undefined)): any {
   return {
     mutateAsync,
     mutate: vi.fn(),
@@ -139,6 +139,7 @@ describe("GameDetailPage Account workspace", () => {
     vi.mocked(useGetAccountCapacities).mockReturnValue(mockCapacities([], "success"));
     vi.mocked(useCreateAccount).mockReturnValue(makeMutation());
     vi.mocked(useUpdateAccount).mockReturnValue(makeMutation());
+    vi.mocked(accountMutationsEnabled).mockReturnValue(true);
   });
 
   it("renders Account list loading", () => {
@@ -329,6 +330,43 @@ describe("GameDetailPage Account workspace", () => {
       expect(screen.queryByRole("button", { name: /افزودن اکانت/i })).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /ویرایش اکانت/i })).not.toBeInTheDocument();
     });
+
+    it("does not mount Account Write dialogs when account mutations are disabled", () => {
+      vi.mocked(accountMutationsEnabled).mockReturnValue(false);
+      mockGamesContext();
+      const accounts = [accountListItemFixture({ id: "acc-1", displayNumber: "TEST-001" })];
+      vi.mocked(useListAccounts).mockReturnValue(mockListAccounts(accounts, "success"));
+      renderGameDetail("/games/game-1");
+      expect(screen.queryByText("افزودن اکانت جدید")).not.toBeInTheDocument();
+      expect(screen.queryByText("ویرایش اکانت")).not.toBeInTheDocument();
+      expect(vi.mocked(useCreateAccount)).not.toHaveBeenCalled();
+      expect(vi.mocked(useUpdateAccount)).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("Create and Edit mutual exclusion", () => {
+    it("Create and Edit dialogs cannot be open simultaneously", () => {
+      mockGamesContext();
+      const accounts = [accountListItemFixture({ id: "acc-1", displayNumber: "TEST-001" })];
+      vi.mocked(useListAccounts).mockReturnValue(mockListAccounts(accounts, "success"));
+      renderGameDetail("/games/game-1");
+
+      const editButtons = screen.getAllByRole("button", { name: /ویرایش اکانت/i });
+      assert.ok(editButtons.length > 0);
+      const editButton = editButtons[0]!;
+
+      fireEvent.click(screen.getByRole("button", { name: /افزودن اکانت/i }));
+      expect(screen.getByText("افزودن اکانت جدید")).toBeInTheDocument();
+      expect(screen.queryByText("ویرایش اکانت")).not.toBeInTheDocument();
+
+      fireEvent.click(editButton);
+      expect(screen.queryByText("افزودن اکانت جدید")).not.toBeInTheDocument();
+      expect(screen.getByText("ویرایش اکانت")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: /افزودن اکانت/i }));
+      expect(screen.queryByText("ویرایش اکانت")).not.toBeInTheDocument();
+      expect(screen.getByText("افزودن اکانت جدید")).toBeInTheDocument();
+    });
   });
 
   describe("Inactive Game behavior", () => {
@@ -339,6 +377,33 @@ describe("GameDetailPage Account workspace", () => {
       const addButton = screen.getByRole("button", { name: /افزودن اکانت/i });
       expect(addButton).toBeDisabled();
       expect(screen.getByText(PERSIAN_INACTIVE_GAME_CREATE_DISABLED)).toBeInTheDocument();
+    });
+
+    it("does not send any Create request when the Add Account button is disabled", () => {
+      const mutateAsync = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(useCreateAccount).mockReturnValue(makeMutation(mutateAsync));
+      mockGamesContext({ games: [{ ...gameFixture, coverUrl: "https://example.com/cover.jpg", status: "INACTIVE" }] });
+      vi.mocked(useListAccounts).mockReturnValue(mockListAccounts([], "success"));
+      renderGameDetail("/games/game-1");
+
+      const addButton = screen.getByRole("button", { name: /افزودن اکانت/i });
+      fireEvent.click(addButton);
+      expect(mutateAsync).not.toHaveBeenCalled();
+      expect(screen.queryByText("افزودن اکانت جدید")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("Error display safety", () => {
+    it("never renders a raw error.message on the Game detail page", () => {
+      const rawMessage = "RAW_SECRET_ERROR_MESSAGE_9472";
+      mockGamesContext({
+        isLoading: false,
+        isError: true,
+        error: createApiError(rawMessage, 500),
+      });
+      vi.mocked(useListAccounts).mockReturnValue(mockListAccounts([], "success"));
+      renderGameDetail("/games/game-1");
+      expect(screen.queryByText(rawMessage)).not.toBeInTheDocument();
     });
   });
 

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { redactForLog, safeAccountErrorContext } from "./sensitive-redaction.ts";
+import { redactForLog } from "./sensitive-redaction.ts";
 
 describe("redactForLog", () => {
   it("redacts plaintext passwords", () => {
@@ -56,17 +56,5 @@ describe("redactForLog", () => {
     const err = new Error("failed for psnEmail operator@example.com");
     const result = redactForLog(err) as { message: string };
     assert.strictEqual(result.message, "[REDACTED]");
-  });
-});
-
-describe("safeAccountErrorContext", () => {
-  it("returns safe operation context without secrets", () => {
-    const err = new Error("insert failed: psnEmail=operator@example.com");
-    const ctx = safeAccountErrorContext("create", err);
-    assert.strictEqual(ctx.operation, "create");
-    assert.strictEqual(ctx.errorCategory, "Error");
-    assert.strictEqual(ctx.safeMessage, "[REDACTED]");
-    const safeError = ctx.safeError as { message: string };
-    assert.strictEqual(safeError.message, "[REDACTED]");
   });
 });

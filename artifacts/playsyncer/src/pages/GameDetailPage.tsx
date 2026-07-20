@@ -140,7 +140,16 @@ export default function GameDetailPage() {
     }
   };
 
+  const handleCreateOpen = () => {
+    if (!isActive) return;
+    setDetailAccountId(null);
+    setEditOpen(false);
+    setEditAccountId(null);
+    setCreateOpen(true);
+  };
+
   const handleEditRequest = (accountId: string) => {
+    setCreateOpen(false);
     setEditAccountId(accountId);
     setEditOpen(true);
     setDetailAccountId(null);
@@ -254,7 +263,7 @@ export default function GameDetailPage() {
             {accountOpsEnabled && (
               <button
                 type="button"
-                onClick={() => isActive && setCreateOpen(true)}
+                onClick={handleCreateOpen}
                 disabled={!isActive}
                 title={isActive ? undefined : PERSIAN_INACTIVE_GAME_CREATE_DISABLED}
                 className="inline-flex items-center gap-2 rounded-xl gradient-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-soft transition-all hover:shadow-glow disabled:opacity-50"
@@ -352,19 +361,23 @@ export default function GameDetailPage() {
         }
       />
 
-      <CreateAccountDialog
-        open={createOpen}
-        gameId={gameId ?? ""}
-        onSuccess={handleCreateSuccess}
-        onClose={() => setCreateOpen(false)}
-      />
+      {accountOpsEnabled && (
+        <CreateAccountDialog
+          open={createOpen}
+          gameId={gameId ?? ""}
+          onSuccess={handleCreateSuccess}
+          onClose={() => setCreateOpen(false)}
+        />
+      )}
 
-      <EditAccountDialog
-        open={editOpen}
-        account={editAccount}
-        onSuccess={handleEditSuccess}
-        onClose={handleEditClose}
-      />
+      {accountOpsEnabled && (
+        <EditAccountDialog
+          open={editOpen}
+          account={editAccount}
+          onSuccess={handleEditSuccess}
+          onClose={handleEditClose}
+        />
+      )}
 
       <GameFormModal
         open={formOpen}

@@ -28,8 +28,11 @@ APPROVED_AND_CLOSED
 Current sub-stage:
 PS-03D5-7 — Account Create/Edit Runtime Integration and Verification
 
+Current work packet:
+PS-03D5-7-CONT-1 — Source Corrections and Focused Verification
+
 Current status:
-IMPLEMENTATION COMPLETE, AWAITING SOURCE REVIEW
+PARTIAL IMPLEMENTATION — FOCUSED CORRECTIONS COMPLETE, AWAITING REVIEW
 
 PS-03D5:
 NOT CLOSED

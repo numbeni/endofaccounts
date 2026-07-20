@@ -16,6 +16,7 @@ import { mockListAccounts, mockAccountDetail, mockCapacities } from "@/test/mock
 import { render } from "@/test/render";
 import { gameFixture, accountListItemFixture, accountDetailFixture } from "@/test/fixtures";
 import { useQueryClient } from "@tanstack/react-query";
+import { accountMutationsEnabled } from "@/features/account-write/accountMutationsEnabled";
 import type { AccountListItem } from "@workspace/api-client-react";
 
 vi.mock("@workspace/api-client-react", async () => {
@@ -150,6 +151,7 @@ describe("GameDetailPage Account operations wiring", () => {
     vi.mocked(useGetAccountCapacities).mockReturnValue(mockCapacities([], "success"));
     vi.mocked(useCreateAccount).mockReturnValue(makeMutation());
     vi.mocked(useUpdateAccount).mockReturnValue(makeMutation());
+    vi.mocked(accountMutationsEnabled).mockReturnValue(true);
   });
 
   it("passes the current gameId to CreateAccountDialog", () => {

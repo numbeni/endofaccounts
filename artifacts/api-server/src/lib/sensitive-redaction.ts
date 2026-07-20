@@ -133,21 +133,3 @@ function redactString(value: string): string {
   }
   return value;
 }
-
-/** Build a safe log context for an Account mutation error. */
-export function safeAccountErrorContext(
-  operation: "create" | "update",
-  err: unknown,
-): Record<string, unknown> {
-  const errorName = err instanceof Error ? err.name : typeof err;
-  const errorMessage = err instanceof Error ? err.message : String(err);
-  const safeMessage = redactString(errorMessage);
-  const safeError = redactForLog(err);
-
-  return {
-    operation,
-    errorCategory: errorName,
-    safeMessage,
-    safeError,
-  };
-}
