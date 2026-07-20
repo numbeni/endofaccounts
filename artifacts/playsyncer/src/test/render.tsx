@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render as rtlRender, RenderOptions } from "@testing-library/react";
 import { ReactElement, ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
-import { GamesProvider } from "@/hooks/useGames";
+import { GamesProvider } from "@/hooks/gamesContext";
 
 interface CustomOptions extends Omit<RenderOptions, "wrapper"> {
   withGamesProvider?: boolean;

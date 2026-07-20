@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { X, Gamepad2, Image as ImageIcon, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Game } from "@/domain/games/types";
-import type { GameFormData } from "@/hooks/useGames";
+import type { GameFormData } from "@/hooks/gamesContext";
 
 interface Props {
   open: boolean;

@@ -2,7 +2,7 @@ import { Routes, Route, useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import { ThemeProvider } from "@/hooks/useTheme";
 import { SidebarProvider } from "@/hooks/useSidebar";
-import { GamesProvider } from "@/hooks/useGames";
+import { GamesProvider } from "@/hooks/gamesContext";
 import { Toaster } from "@/components/ui/sonner";
 import { AppSidebar } from "@/components/AppSidebar";
 import { AppTopBar } from "@/components/AppTopBar";
